@@ -1,0 +1,1031 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0f4c81">
+<title>Attendance CRM</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{
+  --brand:#0f4c81; --brand-d:#0b3a63; --brand-l:#e8f0f8;
+  --bg:#f2f4f7; --card:#ffffff; --ink:#12181f; --muted:#66727f;
+  --line:#dfe4ea; --ok:#137a4a; --warn:#a35a00; --bad:#b3261e;
+  --wd:#137a4a; --ot:#0f4c81; --ab:#b3261e;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg); color:var(--ink); font-size:15px; overscroll-behavior-y:contain;
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+
+/* ---------- app bar ---------- */
+.appbar{
+  position:sticky; top:0; z-index:40; background:var(--brand); color:#fff;
+  padding:calc(env(safe-area-inset-top,0px) + 10px) 12px 10px; display:flex; align-items:center; gap:10px;
+  box-shadow:0 1px 3px rgba(0,0,0,.2);
+}
+.appbar h1{font-size:17px;margin:0;font-weight:600;flex:1;letter-spacing:.2px}
+.appbar .sub{display:block;font-size:11px;font-weight:400;opacity:.8;margin-top:1px}
+.iconbtn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:20px}
+.iconbtn:active{background:rgba(255,255,255,.18)}
+
+/* ---------- controls ---------- */
+.controls{position:sticky; top:0; z-index:30; background:var(--card); border-bottom:1px solid var(--line); padding:10px 12px 8px}
+.row{display:flex;gap:8px}
+.field{flex:1;min-width:0}
+.field label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 3px 2px;font-weight:600}
+select,input[type=month],input[type=text],input[type=number]{
+  width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:#fff; outline:none;
+}
+select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,76,129,.12)}
+.search{margin-top:8px;position:relative}
+.search input{padding-left:32px}
+.search::before{content:"⌕";position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:17px}
+
+/* ---------- summary ---------- */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 12px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;color:var(--muted);white-space:nowrap}
+.chip b{color:var(--ink);font-weight:700}
+.chip.g b{color:var(--wd)} .chip.b b{color:var(--ot)} .chip.r b{color:var(--ab)}
+
+/* ---------- list ---------- */
+#list{padding:0 10px calc(96px + var(--safe-b))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;padding:10px 11px}
+.card.done{border-color:#bfe3cf;background:#fbfffc}
+.card.warn{border-color:#f0d9a8}
+.chead{display:flex;align-items:baseline;gap:8px}
+.code{font-size:11px;font-weight:700;background:var(--brand-l);color:var(--brand);padding:2px 7px;border-radius:6px;letter-spacing:.4px;flex:0 0 auto}
+.code.nocode{background:#fdeceb;color:var(--bad)}
+.nm{font-weight:600;font-size:14.5px;line-height:1.25;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editbtn{flex:0 0 auto;color:var(--muted);font-size:15px;padding:2px 4px}
+.meta{font-size:11.5px;color:var(--muted);margin:3px 0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inputs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.inp label{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;text-align:center;margin-bottom:3px}
+.inp.wd label{color:var(--wd)} .inp.ot label{color:var(--ot)} .inp.ab label{color:var(--ab)}
+.inp input{text-align:center;font-weight:600;font-size:16px;padding:8px 4px;border-radius:9px}
+.inp.wd input{border-color:#c4e3d2} .inp.ot input{border-color:#c3d6e8} .inp.ab input{border-color:#eecdca}
+.inp input:placeholder-shown{font-weight:400;color:var(--muted)}
+.inp label i{font-style:normal;font-weight:600;font-size:8.5px;letter-spacing:.4px;opacity:.55;vertical-align:1px}
+/* read-only, calculated fields */
+.inp .out{
+  text-align:center;font-weight:700;font-size:16px;padding:8px 4px;border-radius:9px;
+  border:1px dashed var(--line);background:#f7f9fb;color:var(--muted);
+  user-select:none;-webkit-user-select:none;
+}
+.inp.ot .out{border-color:#c3d6e8} .inp.ab .out{border-color:#eecdca}
+.inp.ot .out.set{color:var(--ot);background:#eef4fa}
+.inp.ab .out.set{color:var(--ab);background:#fdf0ef}
+.empty{text-align:center;color:var(--muted);padding:48px 24px;line-height:1.6}
+.empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
+
+/* ---------- fab ---------- */
+.fab{
+  position:fixed; right:14px; bottom:calc(14px + var(--safe-b)); z-index:35;
+  background:var(--brand); color:#fff; border-radius:999px; padding:14px 20px; font-weight:600; font-size:15px;
+  box-shadow:0 4px 14px rgba(15,76,129,.4); display:flex; align-items:center; gap:8px;
+}
+.fab:active{background:var(--brand-d)}
+
+/* ---------- sheet / drawer ---------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:50;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{
+  position:fixed;left:0;right:0;bottom:0;z-index:51;background:var(--card);
+  border-radius:18px 18px 0 0; transform:translateY(102%); transition:transform .24s cubic-bezier(.2,.8,.2,1);
+  max-height:92vh; overflow:auto; padding-bottom:calc(12px + var(--safe-b));
+}
+.sheet.on{transform:translateY(0)}
+.grab{width:38px;height:4px;background:var(--line);border-radius:2px;margin:9px auto 4px}
+.sheet h2{font-size:16px;margin:6px 16px 12px;font-weight:600}
+.menu a{display:flex;align-items:center;gap:13px;padding:14px 18px;border-top:1px solid var(--line);color:var(--ink);text-decoration:none}
+.menu a:active{background:var(--brand-l)}
+.menu .ic{width:24px;text-align:center;font-size:17px;color:var(--brand)}
+.menu small{display:block;color:var(--muted);font-size:11.5px;font-weight:400;margin-top:1px}
+.menu span b{font-weight:600;font-size:14.5px}
+.menu a.danger .ic,.menu a.danger b{color:var(--bad)}
+.form{padding:0 16px}
+.form .field{margin-bottom:11px}
+.actions{display:flex;gap:9px;padding:6px 16px 14px}
+.btn{flex:1;padding:12px;border-radius:10px;font-weight:600;text-align:center;border:1px solid var(--line);background:#fff}
+.btn.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn.dgr{background:var(--bad);color:#fff;border-color:var(--bad)}
+.note{font-size:12px;color:var(--muted);padding:0 16px 12px;line-height:1.5}
+.check{display:flex;align-items:center;gap:9px;padding:2px 16px 12px;font-size:13.5px}
+.check input{width:18px;height:18px;accent-color:var(--brand)}
+.pill{display:inline-block;font-size:11px;background:var(--brand-l);color:var(--brand);border-radius:6px;padding:2px 7px;margin:0 4px 4px 0}
+
+/* ---------- toast ---------- */
+#toast{
+  position:fixed;left:50%;bottom:calc(84px + var(--safe-b));transform:translate(-50%,12px);z-index:80;
+  background:#12181f;color:#fff;padding:11px 16px;border-radius:10px;font-size:13.5px;max-width:88vw;
+  opacity:0;pointer-events:none;transition:all .2s;text-align:center
+}
+#toast.on{opacity:.96;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <div style="flex:1">
+    <h1><span id="barTitle">Attendance CRM</span><span class="sub" id="barSub">Working Days · Overtime · Absent</span></h1>
+  </div>
+  <button class="iconbtn" id="btnMenu" aria-label="Menu">☰</button>
+</div>
+
+<div class="controls">
+  <div class="row">
+    <div class="field"><label>Site</label><select id="selSite"></select></div>
+    <div class="field" style="flex:0 0 140px"><label>Month</label><input type="month" id="selMonth"></div>
+  </div>
+  <div class="search"><input type="text" id="q" placeholder="Search name, code, father name…" autocomplete="off"></div>
+</div>
+
+<div class="chips" id="chips"></div>
+<div id="list"></div>
+
+<button class="fab" id="btnExport">⤓ Export Excel</button>
+
+<div class="scrim" id="scrim"></div>
+
+<!-- menu -->
+<div class="sheet" id="shMenu">
+  <div class="grab"></div><h2>Menu</h2>
+  <div class="menu">
+    <a href="#" data-act="import"><span class="ic">⇪</span><span><b>Import operators from Excel</b><small>Each sheet in the file becomes a site</small></span></a>
+    <a href="#" data-act="addop"><span class="ic">＋</span><span><b>Add operator</b><small>Add one worker to the current site</small></span></a>
+    <a href="#" data-act="setup"><span class="ic">⚿</span><span><b>Load my setup file</b><small id="setupSub">Assigns your sites — sent to you by head office</small></span></a>
+    <a href="#" data-act="addsite" data-unlocked><span class="ic">▤</span><span><b>Add site</b><small>Create a new site manually</small></span></a>
+    <a href="#" data-act="editsite" data-unlocked><span class="ic">✎</span><span><b>Rename or delete this site</b><small id="editsiteSub">Current site</small></span></a>
+    <a href="#" data-act="fill"><span class="ic">≡</span><span><b>Quick fill</b><small>Set WD for everyone still blank</small></span></a>
+    <a href="#" data-act="std"><span class="ic">∑</span><span><b>Standard month length</b><small id="stdSub">30 days — drives the OT / AB formula</small></span></a>
+    <a href="#" data-act="export"><span class="ic">⤓</span><span><b>Export Excel</b><small>One sheet per site, ready to send</small></span></a>
+    <a href="#" data-act="backup"><span class="ic">⛁</span><span><b>Backup / restore data</b><small>Save or load a .json copy of everything</small></span></a>
+    <a href="#" data-act="clear" class="danger"><span class="ic">⌫</span><span><b>Clear this month's entries</b><small>Current site only — operators are kept</small></span></a>
+  </div>
+  <div class="note" id="menuNote"></div>
+</div>
+
+<!-- operator editor -->
+<div class="sheet" id="shOp">
+  <div class="grab"></div><h2 id="opTitle">Add operator</h2>
+  <div class="form">
+    <div class="row">
+      <div class="field"><label>Code No.</label><input type="text" id="fCode" autocomplete="off" placeholder="blank if not issued"></div>
+      <div class="field"><label>Site</label><select id="fSite"></select></div>
+    </div>
+    <div class="field"><label>Name</label><input type="text" id="fName" autocomplete="off"></div>
+    <div class="field"><label>Father Name</label><input type="text" id="fFather" autocomplete="off"></div>
+    <div class="field"><label>Account Number</label><input type="text" id="fAcct" inputmode="numeric" autocomplete="off"></div>
+    <div class="field"><label>IFSC Code</label><input type="text" id="fIfsc" autocomplete="off" style="text-transform:uppercase"></div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="opDelete">Delete</button>
+    <button class="btn pri" id="opSave">Save</button>
+  </div>
+</div>
+
+<!-- import -->
+<div class="sheet" id="shImport">
+  <div class="grab"></div><h2>Import operators from Excel</h2>
+  <div class="note">
+    Pick an .xlsx file. Every <b>sheet</b> becomes a <b>site</b>, and the columns
+    <span class="pill">CODE NO.</span><span class="pill">NAME</span><span class="pill">FATHER NAME</span>
+    <span class="pill">ACCOUNT NUMBER</span><span class="pill">IFSC CODE</span>
+    are read automatically. Existing operators are matched by code and updated — nothing is lost.
+  </div>
+  <div class="form"><div class="field"><input type="file" id="fFile" accept=".xlsx,.xlsm"></div></div>
+  <label class="check"><input type="checkbox" id="impWdOt"> Also import WD into the selected month (OT and AB are recalculated from it)</label>
+  <label class="check"><input type="checkbox" id="impReplace"> Replace existing operator lists instead of merging</label>
+  <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="impRun">Import</button></div>
+</div>
+
+<!-- export -->
+<div class="sheet" id="shExport">
+  <div class="grab"></div><h2>Export to Excel</h2>
+  <div class="note" id="expSummary"></div>
+  <label class="check"><input type="checkbox" id="expAll" checked> Include all sites (one sheet each)</label>
+  <label class="check"><input type="checkbox" id="expOnlyFilled"> Only include operators with WD, OT or AB entered</label>
+  <div class="actions">
+    <button class="btn" id="expSave">⤓ Save to phone</button>
+    <button class="btn pri" id="expRun">Save &amp; share</button>
+  </div>
+  <div class="note" id="expHint" style="padding-top:0"></div>
+</div>
+
+<!-- standard month -->
+<div class="sheet" id="shStd">
+  <div class="grab"></div><h2>Standard month length</h2>
+  <div class="note">
+    The supervisor types <b>WD</b> only — OT and AB are worked out from it:<br>
+    <span class="pill">WD &lt; standard → AB = standard − WD</span>
+    <span class="pill">WD &gt; standard → OT = WD − standard</span>
+    <span class="pill">WD = standard → both blank</span><br>
+    OT and AB are calculated, not editable — the supervisor cannot get them wrong.
+  </div>
+  <div class="form"><div class="field"><label>Standard days</label><input type="number" id="stdVal" inputmode="numeric" min="1" max="31"></div></div>
+  <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="stdSave">Save &amp; recalculate</button></div>
+</div>
+
+<!-- quick fill -->
+<div class="sheet" id="shFill">
+  <div class="grab"></div><h2>Quick fill</h2>
+  <div class="note">Sets WD for every operator on this site who has nothing entered yet for the selected month — OT and AB follow from the formula. Operators already filled in are untouched.</div>
+  <div class="form"><div class="field"><label>WD value</label><input type="number" id="fillVal" inputmode="numeric"></div></div>
+  <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="fillRun">Apply</button></div>
+</div>
+
+<!-- site -->
+<div class="sheet" id="shSite">
+  <div class="grab"></div><h2 id="siteTitle">Add site</h2>
+  <div class="form"><div class="field"><label>Site name</label><input type="text" id="fSiteName" autocomplete="off" placeholder="e.g. GREENPANEL"></div></div>
+  <div class="actions"><button class="btn" id="siteDelete">Delete</button><button class="btn pri" id="siteSave">Save</button></div>
+</div>
+
+<!-- setup file -->
+<div class="sheet" id="shSetup">
+  <div class="grab"></div><h2>Load my setup file</h2>
+  <div class="note" id="setupNote">
+    Head office sends you a small <b>.json</b> file on WhatsApp. Loading it puts your own sites and
+    your operators into the app. Nothing you have already typed for this month is lost.
+  </div>
+  <div class="form"><div class="field"><input type="file" id="setupFile" accept=".json,application/json"></div></div>
+  <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="setupRun">Load</button></div>
+</div>
+
+<!-- backup -->
+<div class="sheet" id="shBackup">
+  <div class="grab"></div><h2>Backup &amp; restore</h2>
+  <div class="note">A backup holds every site, operator and month of entries in one small .json file. Keep one before handing the phone to someone else.</div>
+  <div class="actions"><button class="btn" id="bkSave">Download backup</button><button class="btn" id="bkLoad">Restore from file</button></div>
+  <input type="file" id="bkFile" accept=".json" hidden>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   Attendance CRM — offline PWA
+   Storage: localStorage.  Excel read/write: dependency-free (below).
+   ===================================================================== */
+
+/* ---------------------------------------------------------------- utils */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let toastT;
+function toast(msg, ms=2200){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'), ms);
+}
+const uid = () => Math.random().toString(36).slice(2,10);
+const norm = s => String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+const trim = s => String(s==null?'':s).replace(/\s+/g,' ').trim();
+function daysInMonth(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m,0).getDate(); }
+/* Head office writes site tabs as "ASAHI TALOJA OK" — the OK is a tick, not part of the name. */
+function cleanSiteName(s){ return trim(s).replace(/\s*\bOK\b\s*$/i,'').trim() || trim(s); }
+/* Rows arrive with no CODE NO. sometimes. Every operator still needs a stable key so their
+   WD can be stored, so blank-code men are keyed by name instead and export with a blank code. */
+const JUNK_CODE = /^(TOTAL|GRANDTOTAL|SUMMARY|CODENO|CODENUMBER|CODE|SNO|SRNO)$/;
+function makeKey(code, name, used){
+  let k = code ? code : '~'+(norm(name)||'ROW');
+  if(used){ let base=k, n=2; while(used.has(k)){ k = base+'#'+n; n++; } used.add(k); }
+  return k;
+}
+const opKey = op => op.key || op.code;
+function monthLabel(ym){
+  const [y,m]=ym.split('-').map(Number);
+  return ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'][m-1]+' '+y;
+}
+
+/* ------------------------------------------------------------- ZIP core */
+/*==ZIP_START==*/
+const CRC_T = (()=>{ const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320 ^ (c>>>1) : c>>>1; t[n]=c>>>0; }
+  return t; })();
+function crc32(buf){ let c=0xFFFFFFFF; for(let i=0;i<buf.length;i++) c = CRC_T[(c ^ buf[i]) & 0xFF] ^ (c>>>8); return (c ^ 0xFFFFFFFF)>>>0; }
+const te = new TextEncoder();
+
+/* Build a ZIP (stored / no compression — valid .xlsx everywhere). */
+function zipBuild(files){                        // files: [{name, data:Uint8Array}]
+  const chunks=[], central=[]; let offset=0;
+  const u16=v=>[v&255,(v>>8)&255], u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+  for(const f of files){
+    const nameB = te.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+    const lh = new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x800),...u16(0),...u16(0),...u16(0),
+                               ...u32(crc),...u32(sz),...u32(sz),...u16(nameB.length),...u16(0)]);
+    chunks.push(lh, nameB, f.data);
+    central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x800),...u16(0),...u16(0),...u16(0),
+                                 ...u32(crc),...u32(sz),...u32(sz),...u16(nameB.length),...u16(0),...u16(0),
+                                 ...u16(0),...u16(0),...u32(0),...u32(offset)]), nameB);
+    offset += lh.length + nameB.length + sz;
+  }
+  const cdStart = offset;
+  let cdSize = 0; for(const c of central) cdSize += c.length;
+  const eocd = new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),
+                               ...u32(cdSize),...u32(cdStart),...u16(0)]);
+  const all=[...chunks,...central,eocd];
+  let total=0; for(const a of all) total+=a.length;
+  const out=new Uint8Array(total); let p=0; for(const a of all){ out.set(a,p); p+=a.length; }
+  return out;
+}
+
+/* Read a ZIP. Uses the platform's DecompressionStream for deflated entries. */
+async function zipRead(buf){
+  const b = new Uint8Array(buf), dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let eocd=-1;
+  for(let i=b.length-22; i>=0 && i>b.length-66000; i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } }
+  if(eocd<0) throw new Error('Not a valid .xlsx file (zip footer missing).');
+  const count = dv.getUint16(eocd+10,true); let p = dv.getUint32(eocd+16,true);
+  const out={};
+  for(let i=0;i<count;i++){
+    if(dv.getUint32(p,true)!==0x02014b50) break;
+    const method=dv.getUint16(p+10,true), csize=dv.getUint32(p+20,true),
+          fnLen=dv.getUint16(p+28,true), exLen=dv.getUint16(p+30,true), cmLen=dv.getUint16(p+32,true),
+          lho=dv.getUint32(p+42,true);
+    const name = new TextDecoder().decode(b.subarray(p+46, p+46+fnLen));
+    const lfn = dv.getUint16(lho+26,true), lex = dv.getUint16(lho+28,true);
+    const start = lho+30+lfn+lex, raw = b.subarray(start, start+csize);
+    if(method===0) out[name]=raw;
+    else if(method===8){
+      if(typeof DecompressionStream==='undefined') throw new Error('This browser cannot open compressed .xlsx files. Please use Chrome.');
+      const ds = new DecompressionStream('deflate-raw');
+      const ab = await new Response(new Blob([raw]).stream().pipeThrough(ds)).arrayBuffer();
+      out[name]=new Uint8Array(ab);
+    } else throw new Error('Unsupported compression in the Excel file.');
+    p += 46+fnLen+exLen+cmLen;
+  }
+  return out;
+}
+/*==ZIP_END==*/
+
+/* --------------------------------------------------------- XLSX writing */
+/*==XLSXWRITE_START==*/
+function xmlEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function colLetter(i){ let s=''; i++; while(i>0){ const r=(i-1)%26; s=String.fromCharCode(65+r)+s; i=(i-r-1)/26; } return s; }
+function safeSheetName(name, used){
+  let n = String(name||'Sheet').replace(/[\\\/\?\*\[\]:]/g,' ').replace(/\s+/g,' ').trim().slice(0,31) || 'Sheet';
+  let base=n, k=2; while(used.has(n.toUpperCase())){ n = (base.slice(0,28)+' '+k).slice(0,31); k++; }
+  used.add(n.toUpperCase()); return n;
+}
+/* sheets: [{name, rows:[[cell,...]]}]  cell = null | number | string | {t:'s',v:'…'} force-text */
+function buildXlsx(sheets){
+  const used=new Set();
+  const named = sheets.map(s=>({ name:safeSheetName(s.name,used), rows:s.rows, widths:s.widths }));
+  const files=[];
+  const A='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+
+  files.push({name:'[Content_Types].xml', data: te.encode(A+
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+    '<Default Extension="xml" ContentType="application/xml"/>'+
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
+    named.map((s,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+    '</Types>')});
+
+  files.push({name:'_rels/.rels', data: te.encode(A+
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'+
+    '</Relationships>')});
+
+  files.push({name:'xl/workbook.xml', data: te.encode(A+
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+
+    named.map((s,i)=>'<sheet name="'+xmlEsc(s.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+
+    '</sheets></workbook>')});
+
+  files.push({name:'xl/_rels/workbook.xml.rels', data: te.encode(A+
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    named.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+
+    '<Relationship Id="rId'+(named.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'+
+    '</Relationships>')});
+
+  files.push({name:'xl/styles.xml', data: te.encode(A+
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'+
+    '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>'+
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor indexed="64"/></patternFill></fill></fills>'+
+    '<borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>'+
+    '<border><left style="thin"><color rgb="FF9AA6B2"/></left><right style="thin"><color rgb="FF9AA6B2"/></right>'+
+    '<top style="thin"><color rgb="FF9AA6B2"/></top><bottom style="thin"><color rgb="FF9AA6B2"/></bottom><diagonal/></border></borders>'+
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+    '<cellXfs count="3">'+
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>'+
+      '<xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>'+
+    '</cellXfs>'+
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')});
+
+  named.forEach((s,si)=>{
+    let maxc=0; for(const r of s.rows) if(r.length>maxc) maxc=r.length;
+    let xml = A+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+    if(s.widths && s.widths.length){
+      xml += '<cols>'+s.widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
+    }
+    xml += '<sheetData>';
+    s.rows.forEach((row,ri)=>{
+      const rn = ri+1; let cells='';
+      row.forEach((cell,ci)=>{
+        if(cell===null||cell===undefined||cell==='') return;
+        const ref = colLetter(ci)+rn;
+        const head = ri===0;
+        if(typeof cell==='number' && isFinite(cell)){
+          cells += '<c r="'+ref+'"'+(head?' s="1"':'')+'><v>'+cell+'</v></c>';
+        } else {
+          const v = (cell && typeof cell==='object') ? cell.v : cell;
+          cells += '<c r="'+ref+'" t="inlineStr" s="'+(head?1:2)+'"><is><t xml:space="preserve">'+xmlEsc(v)+'</t></is></c>';
+        }
+      });
+      if(cells) xml += '<row r="'+rn+'">'+cells+'</row>';
+    });
+    xml += '</sheetData></worksheet>';
+    files.push({name:'xl/worksheets/sheet'+(si+1)+'.xml', data: te.encode(xml)});
+  });
+
+  return zipBuild(files);
+}
+/*==XLSXWRITE_END==*/
+
+/* --------------------------------------------------------- XLSX reading */
+async function parseXlsx(arrayBuffer){
+  const zip = await zipRead(arrayBuffer);
+  const dec = new TextDecoder();
+  const px = n => zip[n] ? new DOMParser().parseFromString(dec.decode(zip[n]),'application/xml') : null;
+
+  const shared=[]; const ss = px('xl/sharedStrings.xml');
+  if(ss) for(const si of ss.getElementsByTagName('si')){
+    let t=''; for(const n of si.getElementsByTagName('t')) t += n.textContent;
+    shared.push(t);
+  }
+  const wb = px('xl/workbook.xml'); if(!wb) throw new Error('Not a valid Excel workbook.');
+  const rels = px('xl/_rels/workbook.xml.rels');
+  const relMap={}; if(rels) for(const r of rels.getElementsByTagName('Relationship')) relMap[r.getAttribute('Id')] = r.getAttribute('Target');
+
+  const sheets=[];
+  for(const sh of wb.getElementsByTagName('sheet')){
+    const name = sh.getAttribute('name');
+    const rid = sh.getAttribute('r:id') || sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+    let target = relMap[rid] || '';
+    target = target.replace(/^\//,'').replace(/^xl\//,'');
+    const doc = px('xl/'+target); if(!doc) continue;
+    const rows=[];
+    for(const row of doc.getElementsByTagName('row')){
+      const arr=[];
+      for(const c of row.getElementsByTagName('c')){
+        const ref=c.getAttribute('r')||''; const m=ref.match(/^([A-Z]+)/);
+        let ci=0; if(m){ for(const ch of m[1]) ci = ci*26 + (ch.charCodeAt(0)-64); ci--; }
+        const t = c.getAttribute('t'); let val=null;
+        if(t==='inlineStr'){ let s=''; for(const n of c.getElementsByTagName('t')) s+=n.textContent; val=s; }
+        else { const v=c.getElementsByTagName('v')[0]; if(v){ val = t==='s' ? (shared[+v.textContent]??'') : (t==='str'? v.textContent : Number(v.textContent)); } }
+        if(val!==null && val!=='') arr[ci]=val;
+      }
+      rows.push(arr);
+    }
+    sheets.push({name, rows});
+  }
+  return sheets;
+}
+
+/* header aliases → field */
+const HEAD = [
+  ['code',    ['CODENO','CODENUMBER','CODE','EMPCODE','EMPLOYEECODE','TOKENNO','TOKEN']],
+  ['father',  ['FATHERNAME','FATHERSNAME','FATHER','SONOF','FNAME']],
+  ['name',    ['NAME','EMPLOYEENAME','OPERATORNAME','WORKERNAME']],
+  ['wd',      ['WD','WORKINGDAYS','WORKDAYS','WORKINGDAY','DUTY','DUTYDAYS','PRESENT','PRESENTDAYS']],
+  ['ot',      ['OT','OVERTIME','OTHRS','OTHOURS','OTDAYS']],
+  ['ab',      ['AB','ABSENT','ABSENTDAYS','ABSENTS','ABSENTDAY']],
+  ['account', ['ACCOUNTNUMBER','ACCOUNTNO','ACNO','ACCNO','ACCOUNT','BANKACCOUNT','BANKACNO']],
+  ['ifsc',    ['IFSCCODE','IFSC','IFSCODE','BANKIFSC']],
+];
+function mapHeader(row){
+  const map={};
+  row.forEach((cell,i)=>{
+    const n = norm(cell); if(!n) return;
+    for(const [field,alts] of HEAD){
+      if(map[field]!==undefined) continue;
+      if(alts.includes(n)){ map[field]=i; return; }
+    }
+  });
+  return map;
+}
+
+/* ------------------------------------------------------------- app data */
+const KEY='attendance-crm.v1';
+let DB = load();
+function load(){
+  try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.sites) return d; }catch(e){}
+  return { sites:[], entries:{}, ui:{} };
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){ toast('Storage full — export and back up now'); } }
+const ekey = (siteId, ym, code) => siteId+'|'+ym+'|'+code;
+function getEntry(siteId, ym, code){ return DB.entries[ekey(siteId,ym,code)] || {}; }
+function setEntry(siteId, ym, code, field, val){
+  const k = ekey(siteId,ym,code); const e = DB.entries[k] || {};
+  if(val===''||val===null||val===undefined) delete e[field]; else e[field]=val;
+  DB.entries[k]=e; prune(k); save();
+}
+function prune(k){
+  const e = DB.entries[k]; if(!e) return;
+  if(e.ot==null) delete e.otM;                      // manual flags only live with a value
+  if(e.ab==null) delete e.abM;
+  if(e.wd==null && e.ot==null && e.ab==null) delete DB.entries[k];
+}
+function curSite(){ return DB.sites.find(s=>s.id===DB.ui.site) || DB.sites[0] || null; }
+function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); }
+
+/* ---- automatic OT / AB ------------------------------------------------
+   WD is the only thing anybody types. Standard month = 30 days by default
+   (changeable in the menu).
+     WD <  standard  ->  AB = standard - WD,  OT blank
+     WD >  standard  ->  OT = WD - standard,  AB blank
+     WD == standard  ->  both blank
+   OT and AB are always recomputed from WD — they can never be edited. */
+function stdDays(){ const v = +(DB.settings && DB.settings.std); return v>0 ? v : 30; }
+function derive(siteId, ym, code){
+  const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
+  const std = stdDays(), wd = e.wd;
+  delete e.otM; delete e.abM;                       // legacy flags — no manual values any more
+  if(wd==null){ delete e.ab; delete e.ot; }
+  else {
+    if(wd < std){ e.ab = std - wd; delete e.ot; }
+    else if(wd > std){ e.ot = wd - std; delete e.ab; }
+    else { delete e.ab; delete e.ot; }
+  }
+  prune(k); save();
+  return DB.entries[k] || {};
+}
+/* Re-apply the formula everywhere (after import, or a standard-days change). */
+function deriveAll(){
+  let n=0;
+  for(const k of Object.keys(DB.entries)){
+    const before = JSON.stringify(DB.entries[k]);
+    const [s,m,c] = k.split('|'); derive(s,m,c);
+    if(JSON.stringify(DB.entries[k]||{}) !== before) n++;
+  }
+  save(); return n;
+}
+
+/* ---------------------------------------------------------------- sheet */
+let openSheet=null;
+function show(id){
+  if(openSheet) openSheet.classList.remove('on');
+  openSheet = $(id); openSheet.classList.add('on'); $('#scrim').classList.add('on');
+}
+function hide(){ if(openSheet) openSheet.classList.remove('on'); openSheet=null; $('#scrim').classList.remove('on'); }
+$('#scrim').addEventListener('click', hide);
+$$('[data-close]').forEach(b=>b.addEventListener('click', hide));
+
+/* ----------------------------------------------------------- rendering */
+function renderSites(){
+  const sel=$('#selSite'), fsel=$('#fSite');
+  if(!DB.ui.site || !DB.sites.some(s=>s.id===DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
+  const opts = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+' ('+s.operators.length+')</option>').join('');
+  sel.innerHTML = opts || '<option value="">— no sites yet —</option>';
+  fsel.innerHTML = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+'</option>').join('');
+  if(DB.ui.site){ sel.value=DB.ui.site; fsel.value=DB.ui.site; }
+}
+function render(){
+  renderSites();
+  $('#selMonth').value = curMonth();
+  const site = curSite(), ym = curMonth(), list=$('#list'), q = norm($('#q').value);
+  $('#barTitle').textContent = DB.supervisor ? DB.supervisor.name : 'Attendance CRM';
+  $('#barSub').textContent = site ? site.name + ' · ' + monthLabel(ym) : 'Working Days · Overtime · Absent';
+
+  if(!site){
+    $('#chips').innerHTML='';
+    list.innerHTML = '<div class="empty"><b>No sites yet</b>Open the menu (☰) and load the setup file head office sent you.</div>';
+    return;
+  }
+  const std = stdDays();
+  let filled=0, tWd=0, tOt=0, tAb=0, html='', shown=0;
+  for(const op of site.operators){
+    const e = getEntry(site.id, ym, opKey(op));
+    const has = e.wd!=null || e.ot!=null || e.ab!=null;
+    if(has) filled++;
+    tWd += (+e.wd||0); tOt += (+e.ot||0); tAb += (+e.ab||0);
+    if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) || norm(op.father).includes(q))) continue;
+    shown++;
+    const meta = [op.father, op.account ? '•••'+String(op.account).slice(-4) : '', op.ifsc].filter(Boolean).join('  ·  ');
+    html += '<div class="card '+(has?'done':'')+'" data-key="'+xmlEsc(opKey(op))+'">'+
+      '<div class="chead"><span class="code'+(op.code?'':' nocode')+'">'+xmlEsc(op.code||'NO CODE')+'</span>'+
+      '<span class="nm">'+xmlEsc(op.name||'(no name)')+'</span>'+
+      '<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button></div>'+
+      (meta?'<div class="meta">'+xmlEsc(meta)+'</div>':'<div class="meta">—</div>')+
+      '<div class="inputs">'+ fld(e) +'</div></div>';
+  }
+  $('#chips').innerHTML =
+    '<span class="chip">Operators <b>'+site.operators.length+'</b></span>'+
+    '<span class="chip">Filled <b>'+filled+'/'+site.operators.length+'</b></span>'+
+    '<span class="chip g">Total WD <b>'+tWd+'</b></span>'+
+    '<span class="chip b">Total OT <b>'+tOt+'</b></span>'+
+    '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
+    '<span class="chip">Standard month <b>'+std+'</b></span>';
+
+  list.innerHTML = html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
+    (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>';
+}
+/* WD is the only editable field. OT and AB are read-only result boxes. */
+function fld(e){
+  return '<div class="inp wd"><label>WD</label>'+
+      '<input type="number" inputmode="numeric" min="0" max="999" step="1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
+    '<div class="inp ot"><label>OT <i>auto</i></label>'+
+      '<div class="out'+(e.ot==null?'':' set')+'" data-f="ot">'+(e.ot==null?'–':e.ot)+'</div></div>'+
+    '<div class="inp ab"><label>AB <i>auto</i></label>'+
+      '<div class="out'+(e.ab==null?'':' set')+'" data-f="ab">'+(e.ab==null?'–':e.ab)+'</div></div>';
+}
+
+/* -------------------------------------------------------------- events */
+$('#selSite').addEventListener('change', e=>{ DB.ui.site=e.target.value; save(); render(); });
+$('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); render(); });
+$('#q').addEventListener('input', render);
+
+$('#list').addEventListener('input', e=>{
+  const inp = e.target.closest('input[data-f="wd"]'); if(!inp) return;   // WD is the only input
+  const card = e.target.closest('.card'), code = card.dataset.key;
+  const site = curSite().id, ym = curMonth();
+
+  let v = inp.value.trim();
+  if(v!==''){
+    const c = Math.max(0, Math.min(999, Math.round(+v || 0)));
+    if(String(c)!==v && isFinite(+v)) inp.value = c;      // reflect clamping back to the field
+    v = c;
+  }
+  setEntry(site, ym, code, 'wd', v===''?'':v);
+  const ent = derive(site, ym, code);
+
+  for(const g of ['ot','ab']){
+    const box = card.querySelector('.out[data-f="'+g+'"]');
+    box.textContent = ent[g]==null ? '–' : ent[g];
+    box.classList.toggle('set', ent[g]!=null);
+  }
+  card.classList.toggle('done', ent.wd!=null);
+  updateChips();
+});
+$('#list').addEventListener('click', e=>{
+  const b = e.target.closest('[data-edit]'); if(!b) return;
+  openOp(b.dataset.edit);
+});
+function updateChips(){
+  const site=curSite(), ym=curMonth(); if(!site) return;
+  let filled=0,tWd=0,tOt=0,tAb=0;
+  for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
+    if(e.wd!=null||e.ot!=null||e.ab!=null) filled++;
+    tWd+=(+e.wd||0); tOt+=(+e.ot||0); tAb+=(+e.ab||0); }
+  const c=$('#chips').children;
+  if(c.length>=5){
+    c[1].innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
+    c[2].innerHTML='Total WD <b>'+tWd+'</b>'; c[3].innerHTML='Total OT <b>'+tOt+'</b>'; c[4].innerHTML='Total AB <b>'+tAb+'</b>';
+  }
+}
+
+/* menu */
+$('#btnMenu').addEventListener('click', ()=>{
+  const nOps = DB.sites.reduce((a,s)=>a+s.operators.length,0);
+  $('#editsiteSub').textContent = curSite() ? curSite().name : 'No site selected';
+  $('#stdSub').textContent = stdDays()+' days — drives the OT / AB formula';
+  $('#setupSub').textContent = DB.supervisor
+    ? 'Loaded for '+DB.supervisor.name+(DB.supervisor.state?' · '+DB.supervisor.state:'')
+    : 'Assigns your sites — sent to you by head office';
+  // sites come from head office once a setup file is loaded
+  $$('#shMenu [data-unlocked]').forEach(a=>a.style.display = DB.locked ? 'none' : '');
+  $('#menuNote').textContent = DB.sites.length+' site'+(DB.sites.length===1?'':'s')+' · '+nOps+' operators · '+Object.keys(DB.entries).length+' entries stored on this device.';
+  show('#shMenu');
+});
+$('#shMenu').addEventListener('click', e=>{
+  const a = e.target.closest('[data-act]'); if(!a) return; e.preventDefault();
+  const act=a.dataset.act; hide();
+  setTimeout(()=>{
+    if(act==='import') show('#shImport');
+    else if(act==='addop'){ if(!DB.sites.length) return toast('Add a site first'); openOp(null); }
+    else if(act==='setup') show('#shSetup');
+    else if(act==='addsite') openSite(null);
+    else if(act==='editsite'){ if(!curSite()) return toast('No site selected'); openSite(curSite().id); }
+    else if(act==='fill'){ if(!curSite()) return toast('Add a site first'); $('#fillVal').value=stdDays(); show('#shFill'); }
+    else if(act==='std'){ $('#stdVal').value=stdDays(); show('#shStd'); }
+    else if(act==='export') openExport();
+    else if(act==='backup') show('#shBackup');
+    else if(act==='clear') clearMonth();
+  },180);
+});
+
+/* operator editor — identified by key, because the code may legitimately be blank */
+let editKey=null;
+function openOp(key){
+  editKey=key;
+  const site=curSite();
+  const op = key ? site.operators.find(o=>opKey(o)===key) : null;
+  $('#opTitle').textContent = op ? 'Edit operator' : 'Add operator';
+  $('#fCode').value=op?(op.code||''):''; $('#fName').value=op?op.name:''; $('#fFather').value=op?(op.father||''):'';
+  $('#fAcct').value=op?(op.account||''):''; $('#fIfsc').value=op?(op.ifsc||''):'';
+  renderSites(); $('#fSite').value = site.id;
+  $('#opDelete').style.display = op ? '' : 'none';
+  show('#shOp');
+}
+$('#opSave').addEventListener('click', ()=>{
+  const code = trim($('#fCode').value).toUpperCase(), name = trim($('#fName').value);
+  if(!name) return toast('Name is required');
+  const destId = $('#fSite').value, dest = DB.sites.find(s=>s.id===destId);
+  const from = curSite();
+  const old = editKey ? from.operators.find(o=>opKey(o)===editKey) : null;
+  if(code && dest.operators.some(o=>o.code===code && o!==old))
+    return toast('Code '+code+' already exists on '+dest.name);
+
+  const used = new Set(dest.operators.filter(o=>o!==old).map(opKey));
+  const key = makeKey(code, name, used);
+  const data = { key, code, name, father:trim($('#fFather').value),
+                 account:trim($('#fAcct').value), ifsc:trim($('#fIfsc').value).toUpperCase() };
+  if(old){
+    const i = from.operators.indexOf(old);
+    if(destId===from.id) from.operators[i] = data;
+    else { from.operators.splice(i,1); dest.operators.push(data); }
+    if(editKey!==key || destId!==from.id){        // carry his entries across
+      for(const k of Object.keys(DB.entries)){
+        const [s,m,c]=k.split('|');
+        if(s===from.id && c===editKey){ DB.entries[destId+'|'+m+'|'+key]=DB.entries[k]; delete DB.entries[k]; }
+      }
+    }
+  } else dest.operators.push(data);
+  save(); hide(); render(); toast(editKey?'Saved':'Operator added');
+});
+$('#opDelete').addEventListener('click', ()=>{
+  if(!editKey) return;
+  const site=curSite(), op=site.operators.find(o=>opKey(o)===editKey);
+  if(!confirm('Delete '+((op&&(op.code||op.name))||editKey)+' and their entries?')) return;
+  site.operators = site.operators.filter(o=>opKey(o)!==editKey);
+  for(const k of Object.keys(DB.entries)){ const [s,,c]=k.split('|'); if(s===site.id && c===editKey) delete DB.entries[k]; }
+  save(); hide(); render(); toast('Deleted');
+});
+
+/* sites */
+function openSite(id){
+  $('#siteTitle').textContent = id?'Edit site':'Add site';
+  $('#fSiteName').value = id ? DB.sites.find(s=>s.id===id).name : '';
+  $('#siteDelete').style.display = id?'':'none';
+  $('#shSite').dataset.id = id||'';
+  show('#shSite');
+}
+$('#siteSave').addEventListener('click', ()=>{
+  const name = trim($('#fSiteName').value); if(!name) return toast('Enter a site name');
+  const id = $('#shSite').dataset.id;
+  if(id){ DB.sites.find(s=>s.id===id).name=name; }
+  else { const s={id:uid(), name, operators:[]}; DB.sites.push(s); DB.ui.site=s.id; }
+  save(); hide(); render(); toast('Saved');
+});
+$('#siteDelete').addEventListener('click', ()=>{
+  const id=$('#shSite').dataset.id; if(!id) return;
+  const s=DB.sites.find(x=>x.id===id);
+  if(!confirm('Delete site "'+s.name+'" with '+s.operators.length+' operators and all its entries?')) return;
+  DB.sites = DB.sites.filter(x=>x.id!==id);
+  for(const k of Object.keys(DB.entries)) if(k.split('|')[0]===id) delete DB.entries[k];
+  DB.ui.site = DB.sites[0]?DB.sites[0].id:null;
+  save(); hide(); render(); toast('Site deleted');
+});
+$('#selSite').addEventListener('dblclick', ()=>{ if(curSite()) openSite(curSite().id); });
+
+/* standard month length */
+$('#stdSave').addEventListener('click', ()=>{
+  const v = Math.round(+$('#stdVal').value||0);
+  if(!(v>0 && v<=31)) return toast('Enter a number between 1 and 31');
+  DB.settings = DB.settings || {}; DB.settings.std = v; save();
+  const n = deriveAll();
+  hide(); render();
+  toast('Standard month set to '+v+' days · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4200);
+});
+
+/* quick fill */
+$('#fillRun').addEventListener('click', ()=>{
+  const v = Math.round(+$('#fillVal').value||0);
+  const site=curSite(), ym=curMonth(); let n=0;
+  for(const op of site.operators){
+    const k=opKey(op), e=getEntry(site.id,ym,k);
+    if(e.wd==null && e.ot==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); n++; }
+  }
+  hide(); render(); toast(n+' operator'+(n===1?'':'s')+' set to WD '+v);
+});
+
+/* clear month */
+function clearMonth(){
+  const site=curSite(), ym=curMonth(); if(!site) return;
+  const keys = Object.keys(DB.entries).filter(k=>{const p=k.split('|'); return p[0]===site.id && p[1]===ym;});
+  if(!keys.length) return toast('Nothing to clear');
+  if(!confirm('Clear '+keys.length+' entries for '+site.name+' — '+monthLabel(ym)+'?')) return;
+  keys.forEach(k=>delete DB.entries[k]); save(); render(); toast('Cleared');
+}
+
+/* --------------------------------------------------- setup file (.json)
+   Issued by head office. Carries the supervisor's identity and only the
+   sites they cover. Site ids are stable slugs, so re-issuing an updated
+   file keeps every WD already typed for that site. */
+$('#setupRun').addEventListener('click', async ()=>{
+  const f = $('#setupFile').files[0]; if(!f) return toast('Choose your setup file first');
+  try{
+    const d = JSON.parse(await f.text());
+    if(d.type!=='attendance-crm-setup' || !Array.isArray(d.sites)) throw new Error('this is not a setup file');
+
+    let kept=0, added=0;
+    const sites = d.sites.map(s=>{
+      const ex = DB.sites.find(x=>x.id===s.id);
+      const used = new Set();
+      const ops = (s.operators||[]).map(o=>Object.assign({}, o, {key: o.key || makeKey(o.code, o.name, used)}));
+      if(ex){                                   // keep new joiners the supervisor added himself
+        const have = new Set(ops.map(opKey));
+        for(const o of ex.operators) if(!have.has(opKey(o))){ ops.push(o); kept++; }
+      }
+      return { id:s.id, name:cleanSiteName(s.name), operators:ops };
+    });
+    added = sites.reduce((a,s)=>a+s.operators.length,0);
+
+    // entries for sites no longer assigned are dropped, so nobody carries another man's data
+    const keepIds = new Set(sites.map(s=>s.id));
+    let dropped=0;
+    for(const k of Object.keys(DB.entries)) if(!keepIds.has(k.split('|')[0])){ delete DB.entries[k]; dropped++; }
+
+    DB.sites = sites;
+    DB.supervisor = d.supervisor || null;
+    DB.locked = true;
+    if(d.std) DB.settings = Object.assign({}, DB.settings, {std:d.std});
+    if(!keepIds.has(DB.ui.site)) DB.ui.site = sites[0] ? sites[0].id : null;
+    deriveAll(); save(); hide(); render();
+
+    let msg = 'Loaded for '+((d.supervisor&&d.supervisor.name)||'supervisor')+' — '+sites.length+' site(s), '+added+' operators';
+    if(kept) msg += ' ('+kept+' of yours kept)';
+    if(dropped) msg += ' · '+dropped+' entries for unassigned sites removed';
+    toast(msg, 5200);
+  }catch(err){ console.error(err); toast('Could not load setup file: '+err.message, 5000); }
+});
+
+/* -------------------------------------------------------------- import */
+$('#impRun').addEventListener('click', async ()=>{
+  const f = $('#fFile').files[0]; if(!f) return toast('Choose a file first');
+  const withEntries = $('#impWdOt').checked, replace = $('#impReplace').checked;
+  toast('Reading '+f.name+'…', 6000);
+  try{
+    const sheets = await parseXlsx(await f.arrayBuffer());
+    const ym = curMonth();
+    let nSites=0, nOps=0, nUpd=0, nEnt=0, skipped=[];
+    for(const sh of sheets){
+      let hi=-1, map=null;
+      for(let i=0;i<Math.min(sh.rows.length,25);i++){
+        const m = mapHeader(sh.rows[i]||[]);
+        if(m.code!==undefined || (m.name!==undefined && m.wd!==undefined)){ hi=i; map=m; break; }
+      }
+      if(hi<0){ skipped.push(sh.name); continue; }
+      const sheetName = cleanSiteName(sh.name);
+      let site = DB.sites.find(s=>norm(s.name)===norm(sheetName));
+      if(!site){ site={id:uid(), name:sheetName, operators:[]}; DB.sites.push(site); nSites++; }
+      if(replace) site.operators=[];
+      const used = new Set(site.operators.map(opKey));
+      for(let i=hi+1;i<sh.rows.length;i++){
+        const r = sh.rows[i]||[];
+        const g = k => map[k]===undefined ? '' : (r[map[k]]===undefined?'':r[map[k]]);
+        const code = trim(g('code')).toUpperCase(), name = trim(g('name'));
+        if(!code && !name) continue;
+        if(JUNK_CODE.test(norm(code))) continue;
+        const ex = code ? site.operators.find(o=>o.code===code)
+                        : site.operators.find(o=>!o.code && norm(o.name)===norm(name));
+        const rec = { key: ex ? opKey(ex) : makeKey(code, name, used),
+                      code, name, father:trim(g('father')),
+                      account:trim(g('account')), ifsc:trim(g('ifsc')).toUpperCase() };
+        if(ex){ ex.name=rec.name||ex.name; ex.father=rec.father||ex.father;
+                ex.account=rec.account||ex.account; ex.ifsc=rec.ifsc||ex.ifsc;
+                if(!ex.key) ex.key=rec.key; nUpd++; }
+        else { site.operators.push(rec); nOps++; }
+        const key = rec.key;
+        if(withEntries){
+          const num = key => { const raw=g(key); if(raw===''||raw===null) return null;
+                               const v=Math.round(Math.abs(+raw)); return isFinite(v)?v:null; };
+          const std = stdDays();
+          let wd = num('wd');
+          if(wd==null){                       // no WD column filled — work it back from AB or OT
+            const ab = num('ab'), ot = num('ot');
+            if(ab!=null) wd = Math.max(0, std - ab);
+            else if(ot!=null) wd = std + ot;
+          }
+          if(wd!=null){ setEntry(site.id, ym, key, 'wd', wd); derive(site.id, ym, key); nEnt++; }
+        }
+      }
+      // coded men first, in code order; the ones head office sent with no code go last
+      site.operators.sort((a,b)=> (a.code?0:1)-(b.code?0:1) ||
+        (a.code||a.name||'').localeCompare(b.code||b.name||'', undefined, {numeric:true}));
+    }
+    if(!DB.ui.site && DB.sites[0]) DB.ui.site=DB.sites[0].id;
+    save(); hide(); render();
+    let msg = nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated';
+    if(withEntries) msg += ', '+nEnt+' WD values';
+    if(skipped.length) msg += ' · skipped: '+skipped.join(', ');
+    toast(msg, 5200);
+  }catch(err){ console.error(err); toast('Import failed: '+err.message, 5000); }
+});
+
+/* -------------------------------------------------------------- export */
+const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT','AB','ACCOUNT NUMBER','IFSC CODE'];
+function openExport(){
+  const site=curSite(), ym=curMonth();
+  if(!site) return toast('Nothing to export yet');
+  const n = DB.sites.reduce((a,s)=>a+s.operators.length,0);
+  $('#expSummary').innerHTML = '<b>'+monthLabel(ym)+'</b> — '+DB.sites.length+' site(s), '+n+' operators. '+
+    'Columns exported: '+COLS.map(c=>'<span class="pill">'+c+'</span>').join('');
+  $('#expHint').textContent = canShareFiles()
+    ? 'Save & share puts the file in Downloads and then opens WhatsApp, Gmail, Drive and everything else on the phone.'
+    : 'This browser has no share sheet, so both buttons save the file to Downloads. Attach it from there.';
+  show('#shExport');
+}
+function canShareFiles(){
+  try{ return !!(navigator.canShare && navigator.canShare({files:[new File([1],'a.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})]})); }
+  catch(e){ return false; }
+}
+function buildBook(){
+  const ym = curMonth(), all = $('#expAll').checked, onlyFilled = $('#expOnlyFilled').checked;
+  const sites = all ? DB.sites : [curSite()];
+  const widths = [11,26,26,7,7,7,22,15];
+  const sheets = sites.map(site=>{
+    const rows = [COLS.slice()];
+    for(const op of site.operators){
+      const e = getEntry(site.id, ym, opKey(op));
+      const has = e.wd!=null || e.ot!=null || e.ab!=null;
+      if(onlyFilled && !has) continue;
+      rows.push([ {v:op.code}, op.name||'', op.father||'',
+                  e.wd!=null?+e.wd:null, e.ot!=null?+e.ot:null, e.ab!=null?+e.ab:null,
+                  {v:op.account||''}, {v:op.ifsc||''} ]);
+    }
+    return { name: site.name, rows, widths };
+  });
+  return { data: buildXlsx(sheets), rows: sheets.reduce((a,s)=>a+s.rows.length-1,0) };
+}
+function makeExportFile(){
+  const {data, rows} = buildBook();
+  const who = DB.supervisor && DB.supervisor.name
+    ? '_'+DB.supervisor.name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'') : '';
+  const fname = 'ATTENDANCE_'+monthLabel(curMonth()).replace(' ','_')+who+'.xlsx';
+  return { file: new File([data], fname, {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), fname, rows };
+}
+function downloadFile(file){
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a'); a.href=url; a.download=file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 8000);
+}
+/* Save only */
+$('#expSave').addEventListener('click', ()=>{
+  try{
+    const {file, fname, rows} = makeExportFile();
+    downloadFile(file); hide();
+    toast('Saved '+fname+' ('+rows+' rows) to Downloads', 4200);
+  }catch(err){ console.error(err); toast('Export failed: '+err.message, 5000); }
+});
+/* Save, then open the full Android share sheet */
+$('#expRun').addEventListener('click', async ()=>{
+  let made;
+  try{ made = makeExportFile(); }
+  catch(err){ console.error(err); return toast('Export failed: '+err.message, 5000); }
+  const {file, fname, rows} = made;
+  downloadFile(file);                       // always lands in Downloads first
+  hide();
+  if(!canShareFiles()) return toast('Saved '+fname+' ('+rows+' rows) to Downloads', 4200);
+  try{
+    await navigator.share({files:[file], title:fname, text:'Attendance — '+monthLabel(curMonth())});
+    toast('Saved to Downloads and shared ('+rows+' rows)', 4200);
+  }catch(err){
+    if(err && err.name==='AbortError') toast('Saved '+fname+' to Downloads — sharing cancelled', 4200);
+    else toast('Saved '+fname+' to Downloads — share it from there', 4600);
+  }
+});
+$('#btnExport').addEventListener('click', openExport);
+
+/* -------------------------------------------------------------- backup */
+$('#bkSave').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify(DB,null,1)], {type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='attendance-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a); a.click(); a.remove(); hide(); toast('Backup downloaded');
+});
+$('#bkLoad').addEventListener('click', ()=>$('#bkFile').click());
+$('#bkFile').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const d = JSON.parse(await f.text());
+    if(!d.sites) throw new Error('not a backup file');
+    if(!confirm('Replace all data on this device with the backup?')) return;
+    DB = d; DB.ui = DB.ui||{}; save(); hide(); render(); toast('Restored');
+  }catch(err){ toast('Restore failed: '+err.message); }
+});
+
+/* ---------------------------------------------------------------- boot */
+if(!DB.ui.month) DB.ui.month = new Date().toISOString().slice(0,7);
+if(!DB.settings) DB.settings = { std: 30 };
+for(const s of DB.sites){ const used=new Set();
+  for(const o of s.operators){ if(!o.key) o.key = makeKey(o.code, o.name, used); else used.add(o.key); } }
+deriveAll();                       // normalise anything stored by an older version
+render(); save();
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+window.addEventListener('beforeunload', save);
+</script>
+</body>
+</html>

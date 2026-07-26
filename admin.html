@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance CRM — Head Office</title>
+<style>
+:root{
+  --brand:#0f4c81; --brand-d:#0b3a63; --brand-l:#e8f0f8;
+  --bg:#eef1f5; --card:#fff; --ink:#12181f; --muted:#66727f; --line:#dde3ea;
+  --ok:#137a4a; --warn:#a35a00; --bad:#b3261e;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+a{color:var(--brand)}
+
+header{background:var(--brand);color:#fff;padding:14px 22px;display:flex;align-items:center;gap:14px}
+header h1{font-size:17px;margin:0;font-weight:600;flex:1}
+header .who{font-size:12px;opacity:.85}
+nav{background:var(--card);border-bottom:1px solid var(--line);padding:0 14px;display:flex;gap:2px;position:sticky;top:0;z-index:20;overflow-x:auto}
+nav button{padding:12px 16px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--brand);border-bottom-color:var(--brand)}
+main{max-width:1180px;margin:0 auto;padding:20px 16px 70px}
+section{display:none} section.on{display:block}
+
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.panel h2{margin:0 0 4px;font-size:15px}
+.panel p.hint{margin:0 0 14px;color:var(--muted);font-size:13px;max-width:74ch}
+.btn{padding:9px 15px;border-radius:9px;border:1px solid var(--line);background:#fff;font-weight:600}
+.btn:hover{border-color:#b9c4cf}
+.btn.pri{background:var(--brand);color:#fff;border-color:var(--brand)}
+.btn.pri:hover{background:var(--brand-d)}
+.btn.sm{padding:5px 10px;font-size:12.5px;font-weight:600;border-radius:7px}
+.btn.dgr{color:var(--bad);border-color:#eecdca}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#f8fafc}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+input[type=text],input[type=number],select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%;outline:none}
+input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,76,129,.12)}
+.tag{display:inline-block;background:var(--brand-l);color:var(--brand);border-radius:6px;padding:2px 8px;font-size:11.5px;font-weight:600;margin:2px 3px 2px 0}
+.tag.none{background:#fdeceb;color:var(--bad)}
+.muted{color:var(--muted)}
+.right{text-align:right}
+.empty{padding:38px;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:5px}
+
+.sitegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:7px;max-height:330px;overflow:auto;padding:3px}
+.sitegrid label{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:9px 11px;cursor:pointer;background:#fff}
+.sitegrid label:hover{border-color:#b9c4cf}
+.sitegrid label.on{border-color:var(--brand);background:var(--brand-l)}
+.sitegrid input{margin:2px 0 0;width:16px;height:16px;accent-color:var(--brand);flex:0 0 auto}
+.sitegrid b{display:block;font-size:13px;font-weight:600}
+.sitegrid small{color:var(--muted);font-size:11.5px}
+.sitegrid label.taken small.by{color:var(--warn)}
+
+dialog{border:none;border-radius:14px;padding:0;width:min(560px,94vw);box-shadow:0 24px 60px rgba(0,0,0,.28)}
+dialog::backdrop{background:rgba(10,20,30,.45)}
+dialog .head{padding:16px 20px 0}
+dialog h3{margin:0 0 3px;font-size:16px}
+dialog .body{padding:14px 20px}
+dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-end;border-top:1px solid var(--line);margin-top:8px}
+.f{margin-bottom:12px}
+.f label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;margin-bottom:4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+.log{font:12.5px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;background:#0f1720;color:#d6e2ee;border-radius:10px;padding:14px 16px;max-height:340px;overflow:auto;white-space:pre-wrap}
+.log .ok{color:#79d4a4} .log .warn{color:#f0c274} .log .bad{color:#f2938c} .log .dim{color:#8296a8}
+#toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,10px);background:#12181f;color:#fff;padding:11px 18px;border-radius:10px;opacity:0;pointer-events:none;transition:.2s;z-index:99;font-size:13.5px}
+#toast.on{opacity:.96;transform:translate(-50%,0)}
+.stat{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:6px}
+.stat div b{display:block;font-size:22px;line-height:1.2}
+.stat div span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Attendance CRM — Head Office</h1>
+  <span class="who" id="hdrStat"></span>
+</header>
+
+<nav>
+  <button data-tab="t1" class="on">1 · Sites &amp; operators</button>
+  <button data-tab="t2">2 · Supervisors</button>
+  <button data-tab="t3">3 · Issue setup files</button>
+  <button data-tab="t4">4 · Merge returned files</button>
+  <button data-tab="t5">Backup</button>
+</nav>
+
+<main>
+
+<!-- ============================================ 1. sites ============ -->
+<section id="t1" class="on">
+  <div class="panel">
+    <h2>Load the master operator list</h2>
+    <p class="hint">Pick your master <b>.xlsx</b> — the one with a sheet per site. Each sheet becomes a site;
+      the CODE NO. / NAME / FATHER NAME / ACCOUNT NUMBER / IFSC CODE columns are read automatically.
+      Loading it again later updates operators by code and keeps everything else.</p>
+    <div class="bar">
+      <input type="file" id="masterFile" accept=".xlsx,.xlsm" style="width:auto">
+      <button class="btn pri" id="masterRun">Load master file</button>
+      <span class="grow"></span>
+      <button class="btn" id="addSite">Add site by hand</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="bar" style="margin-bottom:10px">
+      <h2 style="margin:0">Sites</h2><span class="grow"></span>
+      <span class="muted" id="siteCount"></span>
+    </div>
+    <div id="siteTable"></div>
+  </div>
+</section>
+
+<!-- ======================================= 2. supervisors =========== -->
+<section id="t2">
+  <div class="panel">
+    <h2>Supervisors</h2>
+    <p class="hint">Add each supervisor once and tick the sites they cover. A supervisor can hold any number of
+      sites, and a site can be shared between supervisors if two men genuinely work it — you'll be warned when
+      that happens so it isn't done by mistake.</p>
+    <div class="bar">
+      <button class="btn pri" id="addSup">Add supervisor</button>
+      <input type="text" id="supQ" placeholder="Search name, state or site…" style="max-width:320px">
+      <span class="grow"></span>
+      <span class="muted" id="supCount"></span>
+    </div>
+  </div>
+  <div class="panel" style="padding:0;overflow:hidden"><div id="supTable"></div></div>
+</section>
+
+<!-- ====================================== 3. setup files ============ -->
+<section id="t3">
+  <div class="panel">
+    <h2>Issue setup files</h2>
+    <p class="hint">Each file carries only that supervisor's sites and operators. Send it to him on WhatsApp;
+      he opens the app, taps ☰ → <b>Load my setup file</b>, and he's ready. Re-issue any time —
+      WD already typed for a site he keeps is preserved.</p>
+    <div class="bar">
+      <button class="btn pri" id="dlAll">Download all as ZIP</button>
+      <button class="btn" id="dlEach">Download each separately</button>
+      <span class="grow"></span>
+      <label class="muted" style="display:flex;gap:7px;align-items:center">Standard month
+        <input type="number" id="stdVal" min="1" max="31" style="width:74px">
+      </label>
+    </div>
+  </div>
+  <div class="panel" style="padding:0;overflow:hidden"><div id="issueTable"></div></div>
+</section>
+
+<!-- ========================================== 4. merge ============== -->
+<section id="t4">
+  <div class="panel">
+    <h2>Merge the returned files</h2>
+    <p class="hint">Select every workbook the supervisors sent back — all at once. They're combined into one
+      master file, a sheet per site, in your usual column order. Sites you assigned but never received are
+      listed so you know exactly who to chase.</p>
+    <div class="bar">
+      <input type="file" id="mergeFiles" accept=".xlsx,.xlsm" multiple style="width:auto">
+      <input type="text" id="mergeLabel" placeholder="Label for the file, e.g. JULY_2026" style="max-width:260px">
+      <button class="btn pri" id="mergeRun">Merge</button>
+      <button class="btn" id="mergeDl" disabled>Download master workbook</button>
+    </div>
+  </div>
+  <div class="panel"><div class="log" id="mergeLog">Nothing merged yet.</div></div>
+</section>
+
+<!-- ========================================= 5. backup ============== -->
+<section id="t5">
+  <div class="panel">
+    <h2>Backup</h2>
+    <p class="hint">Everything on this page lives in this browser only. Take a backup before changing computers,
+      and keep one after you've set up all the supervisors — rebuilding 100 assignments by hand is a bad day.</p>
+    <div class="bar">
+      <button class="btn pri" id="cfgSave">Download backup</button>
+      <button class="btn" id="cfgLoadBtn">Restore from backup</button>
+      <input type="file" id="cfgLoad" accept=".json" hidden>
+      <span class="grow"></span>
+      <button class="btn dgr" id="cfgWipe">Erase everything</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- supervisor editor -->
+<dialog id="dlgSup">
+  <div class="head"><h3 id="supTitle">Add supervisor</h3><p class="muted" style="margin:0;font-size:13px">Tick every site this man covers.</p></div>
+  <div class="body">
+    <div class="two">
+      <div class="f"><label>Name</label><input type="text" id="sName" autocomplete="off"></div>
+      <div class="f"><label>State</label><input type="text" id="sState" autocomplete="off" placeholder="e.g. Uttar Pradesh"></div>
+    </div>
+    <div class="f"><label>Phone / ID <span class="muted" style="text-transform:none">(optional)</span></label><input type="text" id="sPhone" autocomplete="off"></div>
+    <div class="f">
+      <label>Sites <span class="muted" id="sSel" style="text-transform:none;letter-spacing:0"></span></label>
+      <div class="bar" style="margin-bottom:8px">
+        <input type="text" id="sFilter" placeholder="Filter sites…" style="max-width:240px">
+        <button class="btn sm" id="sNone" type="button">Clear all</button>
+      </div>
+      <div class="sitegrid" id="sSites"></div>
+    </div>
+  </div>
+  <div class="foot">
+    <button class="btn dgr" id="supDel">Delete</button>
+    <span class="grow"></span>
+    <button class="btn" id="supCancel">Cancel</button>
+    <button class="btn pri" id="supSave">Save</button>
+  </div>
+</dialog>
+
+<!-- site editor -->
+<dialog id="dlgSite">
+  <div class="head"><h3 id="siteTitle">Add site</h3></div>
+  <div class="body">
+    <div class="two">
+      <div class="f"><label>Site name</label><input type="text" id="stName" autocomplete="off"></div>
+      <div class="f"><label>State</label><input type="text" id="stState" autocomplete="off"></div>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:0">The site name becomes the sheet name in every export, so keep it
+      exactly as you want it to appear in payroll.</p>
+  </div>
+  <div class="foot">
+    <button class="btn dgr" id="siteDel">Delete</button>
+    <span class="grow"></span>
+    <button class="btn" id="siteCancel">Cancel</button>
+    <button class="btn pri" id="siteSave">Save</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   Head-office console. Same dependency-free zip/xlsx engine as the app.
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let toastT;
+function toast(m, ms=2600){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'), ms); }
+const norm = s => String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+const trim = s => String(s==null?'':s).replace(/\s+/g,' ').trim();
+const esc  = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const cleanSiteName = s => trim(s).replace(/\s*\bOK\b\s*$/i,'').trim() || trim(s);
+const JUNK_CODE = /^(TOTAL|GRANDTOTAL|SUMMARY|CODENO|CODENUMBER|CODE|SNO|SRNO)$/;
+const slug = s => norm(cleanSiteName(s)).toLowerCase() || 'site';
+function makeKey(code,name,used){ let k = code ? code : '~'+(norm(name)||'ROW');
+  if(used){ let base=k,n=2; while(used.has(k)){ k=base+'#'+n; n++; } used.add(k); } return k; }
+const opKey = op => op.key || op.code;
+const uid  = () => Math.random().toString(36).slice(2,10);
+
+/* ------------------------------------------------------------- ZIP core */
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(b){let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=CRC_T[(c^b[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+const te=new TextEncoder();
+function zipBuild(files){
+  const chunks=[],central=[];let offset=0;
+  const u16=v=>[v&255,(v>>8)&255],u32=v=>[v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255];
+  for(const f of files){
+    const nameB=te.encode(f.name),crc=crc32(f.data),sz=f.data.length;
+    const lh=new Uint8Array([...u32(0x04034b50),...u16(20),...u16(0x800),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(sz),...u32(sz),...u16(nameB.length),...u16(0)]);
+    chunks.push(lh,nameB,f.data);
+    central.push(new Uint8Array([...u32(0x02014b50),...u16(20),...u16(20),...u16(0x800),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(sz),...u32(sz),...u16(nameB.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(offset)]),nameB);
+    offset+=lh.length+nameB.length+sz;
+  }
+  const cdStart=offset;let cdSize=0;for(const c of central)cdSize+=c.length;
+  const eocd=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(files.length),...u16(files.length),...u32(cdSize),...u32(cdStart),...u16(0)]);
+  const all=[...chunks,...central,eocd];let total=0;for(const a of all)total+=a.length;
+  const out=new Uint8Array(total);let p=0;for(const a of all){out.set(a,p);p+=a.length;}
+  return out;
+}
+async function zipRead(buf){
+  const b=new Uint8Array(buf),dv=new DataView(b.buffer,b.byteOffset,b.byteLength);
+  let eocd=-1;
+  for(let i=b.length-22;i>=0&&i>b.length-66000;i--){if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;}}
+  if(eocd<0) throw new Error('not a valid .xlsx (zip footer missing)');
+  const count=dv.getUint16(eocd+10,true);let p=dv.getUint32(eocd+16,true);const out={};
+  for(let i=0;i<count;i++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const method=dv.getUint16(p+10,true),csize=dv.getUint32(p+20,true),
+          fnLen=dv.getUint16(p+28,true),exLen=dv.getUint16(p+30,true),cmLen=dv.getUint16(p+32,true),
+          lho=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(b.subarray(p+46,p+46+fnLen));
+    const lfn=dv.getUint16(lho+26,true),lex=dv.getUint16(lho+28,true);
+    const start=lho+30+lfn+lex,raw=b.subarray(start,start+csize);
+    if(method===0) out[name]=raw;
+    else if(method===8){
+      const ds=new DecompressionStream('deflate-raw');
+      out[name]=new Uint8Array(await new Response(new Blob([raw]).stream().pipeThrough(ds)).arrayBuffer());
+    } else throw new Error('unsupported compression');
+    p+=46+fnLen+exLen+cmLen;
+  }
+  return out;
+}
+/* -------------------------------------------------------- XLSX writing */
+function colLetter(i){let s='';i++;while(i>0){const r=(i-1)%26;s=String.fromCharCode(65+r)+s;i=(i-r-1)/26;}return s;}
+function safeSheetName(name,used){
+  let n=String(name||'Sheet').replace(/[\\\/\?\*\[\]:]/g,' ').replace(/\s+/g,' ').trim().slice(0,31)||'Sheet';
+  let base=n,k=2;while(used.has(n.toUpperCase())){n=(base.slice(0,28)+' '+k).slice(0,31);k++;}
+  used.add(n.toUpperCase());return n;
+}
+function buildXlsx(sheets){
+  const used=new Set();
+  const named=sheets.map(s=>({name:safeSheetName(s.name,used),rows:s.rows,widths:s.widths}));
+  const files=[],A='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  files.push({name:'[Content_Types].xml',data:te.encode(A+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+named.map((s,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>')});
+  files.push({name:'_rels/.rels',data:te.encode(A+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
+  files.push({name:'xl/workbook.xml',data:te.encode(A+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+named.map((s,i)=>'<sheet name="'+esc(s.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>')});
+  files.push({name:'xl/_rels/workbook.xml.rels',data:te.encode(A+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+named.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'<Relationship Id="rId'+(named.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')});
+  files.push({name:'xl/styles.xml',data:te.encode(A+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9E1F2"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF9AA6B2"/></left><right style="thin"><color rgb="FF9AA6B2"/></right><top style="thin"><color rgb="FF9AA6B2"/></top><bottom style="thin"><color rgb="FF9AA6B2"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="49" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')});
+  named.forEach((s,si)=>{
+    let xml=A+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+    if(s.widths&&s.widths.length) xml+='<cols>'+s.widths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>';
+    xml+='<sheetData>';
+    s.rows.forEach((row,ri)=>{
+      const rn=ri+1;let cells='';
+      row.forEach((cell,ci)=>{
+        if(cell===null||cell===undefined||cell==='')return;
+        const ref=colLetter(ci)+rn,head=ri===0;
+        if(typeof cell==='number'&&isFinite(cell)) cells+='<c r="'+ref+'"'+(head?' s="1"':'')+'><v>'+cell+'</v></c>';
+        else{const v=(cell&&typeof cell==='object')?cell.v:cell;
+          cells+='<c r="'+ref+'" t="inlineStr" s="'+(head?1:2)+'"><is><t xml:space="preserve">'+esc(v)+'</t></is></c>';}
+      });
+      if(cells) xml+='<row r="'+rn+'">'+cells+'</row>';
+    });
+    xml+='</sheetData></worksheet>';
+    files.push({name:'xl/worksheets/sheet'+(si+1)+'.xml',data:te.encode(xml)});
+  });
+  return zipBuild(files);
+}
+/* -------------------------------------------------------- XLSX reading */
+async function parseXlsx(ab){
+  const zip=await zipRead(ab),dec=new TextDecoder();
+  const px=n=>zip[n]?new DOMParser().parseFromString(dec.decode(zip[n]),'application/xml'):null;
+  const shared=[];const ss=px('xl/sharedStrings.xml');
+  if(ss)for(const si of ss.getElementsByTagName('si')){let t='';for(const n of si.getElementsByTagName('t'))t+=n.textContent;shared.push(t);}
+  const wb=px('xl/workbook.xml');if(!wb)throw new Error('not a valid workbook');
+  const rels=px('xl/_rels/workbook.xml.rels'),relMap={};
+  if(rels)for(const r of rels.getElementsByTagName('Relationship'))relMap[r.getAttribute('Id')]=r.getAttribute('Target');
+  const sheets=[];
+  for(const sh of wb.getElementsByTagName('sheet')){
+    const name=sh.getAttribute('name');
+    const rid=sh.getAttribute('r:id')||sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships','id');
+    let target=(relMap[rid]||'').replace(/^\//,'').replace(/^xl\//,'');
+    const doc=px('xl/'+target);if(!doc)continue;
+    const rows=[];
+    for(const row of doc.getElementsByTagName('row')){
+      const arr=[];
+      for(const c of row.getElementsByTagName('c')){
+        const ref=c.getAttribute('r')||'',m=ref.match(/^([A-Z]+)/);
+        let ci=0;if(m){for(const ch of m[1])ci=ci*26+(ch.charCodeAt(0)-64);ci--;}
+        const t=c.getAttribute('t');let val=null;
+        if(t==='inlineStr'){let s='';for(const n of c.getElementsByTagName('t'))s+=n.textContent;val=s;}
+        else{const v=c.getElementsByTagName('v')[0];if(v)val=t==='s'?(shared[+v.textContent]??''):(t==='str'?v.textContent:Number(v.textContent));}
+        if(val!==null&&val!=='')arr[ci]=val;
+      }
+      rows.push(arr);
+    }
+    sheets.push({name,rows});
+  }
+  return sheets;
+}
+const HEAD=[
+  ['code',['CODENO','CODENUMBER','CODE','EMPCODE','EMPLOYEECODE','TOKENNO','TOKEN']],
+  ['father',['FATHERNAME','FATHERSNAME','FATHER','SONOF','FNAME']],
+  ['name',['NAME','EMPLOYEENAME','OPERATORNAME','WORKERNAME']],
+  ['wd',['WD','WORKINGDAYS','WORKDAYS','WORKINGDAY','DUTY','DUTYDAYS','PRESENT','PRESENTDAYS']],
+  ['ot',['OT','OVERTIME','OTHRS','OTHOURS','OTDAYS']],
+  ['ab',['AB','ABSENT','ABSENTDAYS','ABSENTS','ABSENTDAY']],
+  ['account',['ACCOUNTNUMBER','ACCOUNTNO','ACNO','ACCNO','ACCOUNT','BANKACCOUNT','BANKACNO']],
+  ['ifsc',['IFSCCODE','IFSC','IFSCODE','BANKIFSC']],
+];
+function mapHeader(row){
+  const map={};
+  row.forEach((cell,i)=>{const n=norm(cell);if(!n)return;
+    for(const [f,alts] of HEAD){if(map[f]!==undefined)continue;if(alts.includes(n)){map[f]=i;return;}}});
+  return map;
+}
+function findHeader(rows){
+  for(let i=0;i<Math.min(rows.length,25);i++){
+    const m=mapHeader(rows[i]||[]);
+    if(m.code!==undefined||(m.name!==undefined&&m.wd!==undefined)) return {i,map:m};
+  }
+  return null;
+}
+function download(name, data, mime){
+  const blob = data instanceof Blob ? data : new Blob([data],{type:mime||'application/octet-stream'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),8000);
+}
+
+/* ------------------------------------------------------------- config */
+const KEY='attendance-crm-admin.v1';
+let CFG = (()=>{ try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.sites) return d; }catch(e){}
+  return { sites:[], supervisors:[], std:30 }; })();
+function saveCfg(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(e){ toast('Browser storage full'); } }
+const siteById = id => CFG.sites.find(s=>s.id===id);
+function supsOfSite(id){ return CFG.supervisors.filter(s=>s.siteIds.includes(id)); }
+
+/* ---------------------------------------------------------------- tabs */
+$$('nav button').forEach(b=>b.addEventListener('click',()=>{
+  $$('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  $$('main section').forEach(s=>s.classList.toggle('on', s.id===b.dataset.tab));
+  if(b.dataset.tab==='t3') renderIssue();
+}));
+
+/* ------------------------------------------------------------ render */
+function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHdr(); saveCfg(); }
+function renderHdr(){
+  const ops=CFG.sites.reduce((a,s)=>a+s.operators.length,0);
+  $('#hdrStat').textContent = CFG.sites.length+' sites · '+ops+' operators · '+CFG.supervisors.length+' supervisors';
+  $('#stdVal').value = CFG.std||30;
+}
+function renderSites(){
+  const el=$('#siteTable');
+  $('#siteCount').textContent = CFG.sites.length ? CFG.sites.length+' sites' : '';
+  if(!CFG.sites.length){ el.innerHTML='<div class="empty"><b>No sites yet</b>Load your master Excel above.</div>'; return; }
+  const rows = CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{
+    const sup=supsOfSite(s.id);
+    return '<tr><td><b>'+esc(s.name)+'</b></td>'+
+      '<td>'+(s.state?esc(s.state):'<span class="muted">—</span>')+'</td>'+
+      '<td class="num">'+s.operators.length+'</td>'+
+      '<td>'+(sup.length?sup.map(x=>'<span class="tag">'+esc(x.name)+'</span>').join('')
+                       :'<span class="tag none">unassigned</span>')+'</td>'+
+      '<td class="right"><button class="btn sm" data-site="'+s.id+'">Edit</button></td></tr>';
+  }).join('');
+  el.innerHTML='<table><thead><tr><th>Site</th><th>State</th><th class="right">Operators</th><th>Supervisor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.querySelectorAll('[data-site]').forEach(b=>b.addEventListener('click',()=>openSite(b.dataset.site)));
+}
+function renderSups(){
+  const el=$('#supTable'), q=norm($('#supQ').value);
+  $('#supCount').textContent = CFG.supervisors.length ? CFG.supervisors.length+' supervisors' : '';
+  if(!CFG.supervisors.length){ el.innerHTML='<div class="empty"><b>No supervisors yet</b>Add the first one above.</div>'; return; }
+  const list = CFG.supervisors.filter(s=>{
+    if(!q) return true;
+    const hay = norm(s.name)+norm(s.state)+norm(s.phone)+s.siteIds.map(i=>norm((siteById(i)||{}).name)).join('');
+    return hay.includes(q);
+  }).sort((a,b)=>(a.state||'').localeCompare(b.state||'')||a.name.localeCompare(b.name));
+  if(!list.length){ el.innerHTML='<div class="empty"><b>No matches</b></div>'; return; }
+  const rows=list.map(s=>{
+    const ops=s.siteIds.reduce((a,i)=>a+((siteById(i)||{operators:[]}).operators.length),0);
+    return '<tr><td><b>'+esc(s.name)+'</b>'+(s.phone?'<br><span class="muted">'+esc(s.phone)+'</span>':'')+'</td>'+
+      '<td>'+(s.state?esc(s.state):'<span class="muted">—</span>')+'</td>'+
+      '<td>'+(s.siteIds.length?s.siteIds.map(i=>'<span class="tag">'+esc((siteById(i)||{name:'?'}).name)+'</span>').join('')
+                              :'<span class="tag none">no sites</span>')+'</td>'+
+      '<td class="num">'+ops+'</td>'+
+      '<td class="right"><button class="btn sm" data-sup="'+s.id+'">Edit</button></td></tr>';
+  }).join('');
+  el.innerHTML='<table><thead><tr><th>Supervisor</th><th>State</th><th>Sites</th><th class="right">Operators</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.querySelectorAll('[data-sup]').forEach(b=>b.addEventListener('click',()=>openSup(b.dataset.sup)));
+}
+$('#supQ').addEventListener('input', renderSups);
+
+/* ------------------------------------------------------- 1. master xlsx */
+$('#masterRun').addEventListener('click', async ()=>{
+  const f=$('#masterFile').files[0]; if(!f) return toast('Choose your master .xlsx first');
+  try{
+    const sheets=await parseXlsx(await f.arrayBuffer());
+    let nSites=0,nOps=0,nUpd=0,skipped=[];
+    for(const sh of sheets){
+      const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
+      const id=slug(sh.name), clean=cleanSiteName(sh.name);
+      let site=CFG.sites.find(s=>s.id===id);
+      if(!site){ site={id, name:clean, state:'', operators:[]}; CFG.sites.push(site); nSites++; }
+      else site.name = clean;
+      const used=new Set(site.operators.map(opKey));
+      for(let i=h.i+1;i<sh.rows.length;i++){
+        const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
+        const code=trim(g('code')).toUpperCase(), name=trim(g('name'));
+        if(!code && !name) continue;
+        if(JUNK_CODE.test(norm(code))) continue;
+        const ex = code ? site.operators.find(o=>o.code===code)
+                        : site.operators.find(o=>!o.code && norm(o.name)===norm(name));
+        const rec={ key: ex?opKey(ex):makeKey(code,name,used), code, name,
+                    father:trim(g('father')), account:trim(g('account')), ifsc:trim(g('ifsc')).toUpperCase()};
+        if(ex){ ex.name=rec.name||ex.name; ex.father=rec.father||ex.father; ex.account=rec.account||ex.account; ex.ifsc=rec.ifsc||ex.ifsc; if(!ex.key) ex.key=rec.key; nUpd++; }
+        else { site.operators.push(rec); nOps++; }
+      }
+      site.operators.sort((a,b)=> (a.code?0:1)-(b.code?0:1) ||
+        (a.code||a.name||'').localeCompare(b.code||b.name||'',undefined,{numeric:true}));
+    }
+    renderAll();
+    toast(nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated'+(skipped.length?' · skipped '+skipped.join(', '):''), 5200);
+  }catch(err){ console.error(err); toast('Could not read the file: '+err.message, 5000); }
+});
+
+/* site dialog */
+let editSiteId=null;
+function openSite(id){
+  editSiteId=id;
+  const s=id?siteById(id):null;
+  $('#siteTitle').textContent = s?'Edit site':'Add site';
+  $('#stName').value = s?s.name:''; $('#stState').value = s?(s.state||''):'';
+  $('#siteDel').style.display = s?'':'none';
+  $('#dlgSite').showModal();
+}
+$('#addSite').addEventListener('click',()=>openSite(null));
+$('#siteCancel').addEventListener('click',()=>$('#dlgSite').close());
+$('#siteSave').addEventListener('click',()=>{
+  const name=trim($('#stName').value); if(!name) return toast('Enter a site name');
+  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.state=trim($('#stState').value); }
+  else{
+    const id=slug(name);
+    if(siteById(id)) return toast('A site with that name already exists');
+    CFG.sites.push({id,name,state:trim($('#stState').value),operators:[]});
+  }
+  $('#dlgSite').close(); renderAll(); toast('Saved');
+});
+$('#siteDel').addEventListener('click',()=>{
+  const s=siteById(editSiteId); if(!s) return;
+  const sup=supsOfSite(s.id);
+  if(!confirm('Delete site "'+s.name+'" with '+s.operators.length+' operators?'+(sup.length?'\n\nIt is assigned to: '+sup.map(x=>x.name).join(', '):''))) return;
+  CFG.sites=CFG.sites.filter(x=>x.id!==s.id);
+  CFG.supervisors.forEach(x=>x.siteIds=x.siteIds.filter(i=>i!==s.id));
+  $('#dlgSite').close(); renderAll(); toast('Site deleted');
+});
+
+/* --------------------------------------------------- 2. supervisors */
+let editSupId=null, pickSites=new Set();
+function openSup(id){
+  editSupId=id;
+  const s=id?CFG.supervisors.find(x=>x.id===id):null;
+  $('#supTitle').textContent = s?'Edit supervisor':'Add supervisor';
+  $('#sName').value=s?s.name:''; $('#sState').value=s?(s.state||''):''; $('#sPhone').value=s?(s.phone||''):'';
+  pickSites = new Set(s?s.siteIds:[]);
+  $('#sFilter').value='';
+  $('#supDel').style.display = s?'':'none';
+  drawPicker(); $('#dlgSup').showModal();
+}
+function drawPicker(){
+  const q=norm($('#sFilter').value);
+  const list=CFG.sites.slice().sort((a,b)=>(a.state||'').localeCompare(b.state||'')||a.name.localeCompare(b.name))
+    .filter(s=>!q||norm(s.name).includes(q)||norm(s.state).includes(q));
+  $('#sSites').innerHTML = list.length ? list.map(s=>{
+    const others=supsOfSite(s.id).filter(x=>x.id!==editSupId);
+    return '<label class="'+(pickSites.has(s.id)?'on ':'')+(others.length?'taken':'')+'">'+
+      '<input type="checkbox" value="'+s.id+'"'+(pickSites.has(s.id)?' checked':'')+'>'+
+      '<span><b>'+esc(s.name)+'</b>'+
+      '<small>'+(s.state?esc(s.state)+' · ':'')+s.operators.length+' operators</small>'+
+      (others.length?'<small class="by">also with '+others.map(o=>esc(o.name)).join(', ')+'</small>':'')+
+      '</span></label>';
+  }).join('') : '<div class="muted" style="padding:14px">No sites match.</div>';
+  $('#sSites').querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>{
+    if(c.checked) pickSites.add(c.value); else pickSites.delete(c.value);
+    c.closest('label').classList.toggle('on', c.checked);
+    countPicked();
+  }));
+  countPicked();
+}
+function countPicked(){
+  const ops=[...pickSites].reduce((a,i)=>a+((siteById(i)||{operators:[]}).operators.length),0);
+  $('#sSel').textContent = pickSites.size ? '— '+pickSites.size+' selected, '+ops+' operators' : '— none selected';
+}
+$('#sFilter').addEventListener('input', drawPicker);
+$('#sNone').addEventListener('click',()=>{ pickSites.clear(); drawPicker(); });
+$('#addSup').addEventListener('click',()=>openSup(null));
+$('#supCancel').addEventListener('click',()=>$('#dlgSup').close());
+$('#supSave').addEventListener('click',()=>{
+  const name=trim($('#sName').value); if(!name) return toast('Enter a name');
+  const rec={ name, state:trim($('#sState').value), phone:trim($('#sPhone').value), siteIds:[...pickSites] };
+  if(editSupId) Object.assign(CFG.supervisors.find(x=>x.id===editSupId), rec);
+  else CFG.supervisors.push(Object.assign({id:uid()}, rec));
+  $('#dlgSup').close(); renderAll(); toast('Saved');
+});
+$('#supDel').addEventListener('click',()=>{
+  const s=CFG.supervisors.find(x=>x.id===editSupId); if(!s) return;
+  if(!confirm('Delete supervisor "'+s.name+'"?')) return;
+  CFG.supervisors=CFG.supervisors.filter(x=>x.id!==editSupId);
+  $('#dlgSup').close(); renderAll(); toast('Deleted');
+});
+
+/* -------------------------------------------------- 3. setup files */
+function setupFor(sup){
+  return {
+    type:'attendance-crm-setup', v:1,
+    issued:new Date().toISOString().slice(0,10),
+    std:CFG.std||30,
+    supervisor:{ id:sup.id, name:sup.name, state:sup.state||'', phone:sup.phone||'' },
+    sites: sup.siteIds.map(i=>siteById(i)).filter(Boolean)
+      .map(s=>({ id:s.id, name:s.name, state:s.state||'', operators:s.operators }))
+  };
+}
+const setupName = sup => 'SETUP_'+sup.name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'')+'.json';
+function renderIssue(){
+  const el=$('#issueTable');
+  if(!CFG.supervisors.length){ el.innerHTML='<div class="empty"><b>No supervisors yet</b>Add them on the previous tab.</div>'; return; }
+  const rows=CFG.supervisors.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{
+    const ops=s.siteIds.reduce((a,i)=>a+((siteById(i)||{operators:[]}).operators.length),0);
+    const ready=s.siteIds.length>0;
+    return '<tr><td><b>'+esc(s.name)+'</b>'+(s.phone?' <span class="muted">'+esc(s.phone)+'</span>':'')+'</td>'+
+      '<td>'+(s.state?esc(s.state):'<span class="muted">—</span>')+'</td>'+
+      '<td class="num">'+s.siteIds.length+'</td><td class="num">'+ops+'</td>'+
+      '<td class="muted" style="font-size:12.5px">'+esc(setupName(s))+'</td>'+
+      '<td class="right"><button class="btn sm'+(ready?' pri':'')+'" data-issue="'+s.id+'"'+(ready?'':' disabled')+'>Download</button></td></tr>';
+  }).join('');
+  el.innerHTML='<table><thead><tr><th>Supervisor</th><th>State</th><th class="right">Sites</th><th class="right">Operators</th><th>File</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.querySelectorAll('[data-issue]').forEach(b=>b.addEventListener('click',()=>{
+    const s=CFG.supervisors.find(x=>x.id===b.dataset.issue);
+    download(setupName(s), JSON.stringify(setupFor(s),null,1), 'application/json');
+  }));
+}
+$('#stdVal').addEventListener('change',e=>{ const v=Math.round(+e.target.value||0);
+  if(v>0&&v<=31){ CFG.std=v; saveCfg(); toast('Standard month set to '+v+' days'); } else e.target.value=CFG.std||30; });
+$('#dlAll').addEventListener('click',()=>{
+  const ready=CFG.supervisors.filter(s=>s.siteIds.length);
+  if(!ready.length) return toast('No supervisor has sites assigned yet');
+  const files=ready.map(s=>({ name:setupName(s), data:te.encode(JSON.stringify(setupFor(s),null,1)) }));
+  download('SETUP_FILES_'+new Date().toISOString().slice(0,10)+'.zip', zipBuild(files), 'application/zip');
+  toast(files.length+' setup files zipped');
+});
+$('#dlEach').addEventListener('click',async ()=>{
+  const ready=CFG.supervisors.filter(s=>s.siteIds.length);
+  if(!ready.length) return toast('No supervisor has sites assigned yet');
+  for(const s of ready){ download(setupName(s), JSON.stringify(setupFor(s),null,1), 'application/json'); await new Promise(r=>setTimeout(r,220)); }
+  toast(ready.length+' files downloaded');
+});
+
+/* ------------------------------------------------------- 4. merging */
+const COLS=['CODE NO.','NAME','FATHER NAME','WD','OT','AB','ACCOUNT NUMBER','IFSC CODE'];
+let mergedBook=null, mergedName='MASTER.xlsx';
+$('#mergeRun').addEventListener('click', async ()=>{
+  const files=[...$('#mergeFiles').files];
+  if(!files.length) return toast('Select the returned workbooks first');
+  const log=[], L=(cls,t)=>log.push('<span class="'+cls+'">'+esc(t)+'</span>');
+  const bySite = new Map();          // siteKey -> {name, rows: Map(code->row), sources:Set}
+  let nRows=0, nFiles=0, dupes=[];
+
+  for(const f of files){
+    let sheets;
+    try{ sheets=await parseXlsx(await f.arrayBuffer()); }
+    catch(err){ L('bad','✗ '+f.name+' — '+err.message); continue; }
+    nFiles++;
+    let fileRows=0;
+    for(const sh of sheets){
+      const h=findHeader(sh.rows); if(!h) continue;
+      const key=slug(sh.name);
+      const known=siteById(key);
+      if(!bySite.has(key)) bySite.set(key,{name:known?known.name:trim(sh.name), rows:new Map(), sources:new Set()});
+      const bucket=bySite.get(key); bucket.sources.add(f.name);
+      for(let i=h.i+1;i<sh.rows.length;i++){
+        const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
+        const code=trim(g('code')).toUpperCase(), nm0=trim(g('name'));
+        if(!code && !nm0) continue;
+        if(JUNK_CODE.test(norm(code))) continue;
+        const rowKey = code || '~'+norm(nm0);
+        const num=k=>{const v=g(k); if(v===''||v===null) return null; const n=Math.round(Math.abs(+v)); return isFinite(n)?n:null;};
+        const row={ code, name:trim(g('name')), father:trim(g('father')),
+                    wd:num('wd'), ot:num('ot'), ab:num('ab'),
+                    account:trim(g('account')), ifsc:trim(g('ifsc')).toUpperCase(), src:f.name };
+        const prev=bucket.rows.get(rowKey);
+        if(prev && prev.src!==f.name && (prev.wd??null)!==(row.wd??null))
+          dupes.push(bucket.name+' / '+code+': '+prev.src+' says WD '+(prev.wd??'blank')+', '+f.name+' says WD '+(row.wd??'blank'));
+        // a row carrying a WD beats a blank one
+        if(!prev || (prev.wd==null && row.wd!=null)) bucket.rows.set(rowKey,row);
+        fileRows++; nRows++;
+      }
+    }
+    L('ok','✓ '+f.name+' — '+sheets.length+' sheet(s), '+fileRows+' rows');
+  }
+
+  if(!bySite.size){ $('#mergeLog').innerHTML='<span class="bad">Nothing readable in those files.</span>'; return; }
+
+  // order sheets the way head office knows them, unknown sites last
+  const order=[...bySite.keys()].sort((a,b)=>{
+    const ka=siteById(a)?0:1, kb=siteById(b)?0:1;
+    return ka-kb || bySite.get(a).name.localeCompare(bySite.get(b).name);
+  });
+  const widths=[11,26,26,7,7,7,22,15];
+  const sheets=order.map(k=>{
+    const b=bySite.get(k), known=siteById(k);
+    // keep head office's operator order where we have it, then anyone extra
+    const seq = known ? known.operators.map(opKey).filter(c=>b.rows.has(c)) : [];
+    for(const c of b.rows.keys()) if(!seq.includes(c)) seq.push(c);
+    const rows=[COLS.slice()];
+    for(const c of seq){ const r=b.rows.get(c);
+      rows.push([{v:r.code}, r.name, r.father, r.wd, r.ot, r.ab, {v:r.account}, {v:r.ifsc}]); }
+    return { name:b.name, rows, widths };
+  });
+
+  const label = trim($('#mergeLabel').value).toUpperCase().replace(/[^A-Z0-9]+/g,'_').replace(/^_|_$/g,'');
+  mergedName = 'MASTER_ATTENDANCE'+(label?'_'+label:'')+'.xlsx';
+  mergedBook = buildXlsx(sheets);
+  $('#mergeDl').disabled=false;
+
+  // coverage
+  const got=new Set(order);
+  const missing=CFG.sites.filter(s=>!got.has(s.id));
+  const unknown=order.filter(k=>!siteById(k));
+  log.push('');
+  L('ok','── '+nFiles+' file(s) merged · '+sheets.length+' sites · '+[...bySite.values()].reduce((a,b)=>a+b.rows.size,0)+' operator rows');
+  if(unknown.length){ log.push(''); L('warn','Sites not in your master list ('+unknown.length+'):');
+    unknown.forEach(k=>L('warn','   • '+bySite.get(k).name+'  ← '+[...bySite.get(k).sources].join(', '))); }
+  if(missing.length){ log.push(''); L('bad','Never received ('+missing.length+' sites):');
+    missing.forEach(s=>{ const who=supsOfSite(s.id).map(x=>x.name+(x.phone?' '+x.phone:'')).join(', ');
+      L('bad','   • '+s.name+(who?'  → chase '+who:'  → nobody assigned')); }); }
+  if(dupes.length){ log.push(''); L('warn','Same operator sent twice with different WD ('+dupes.length+'):');
+    dupes.slice(0,30).forEach(d=>L('warn','   • '+d));
+    if(dupes.length>30) L('dim','   … and '+(dupes.length-30)+' more'); }
+  if(!missing.length && !unknown.length && !dupes.length){ log.push(''); L('ok','Everything reconciled — nothing to chase.'); }
+  $('#mergeLog').innerHTML=log.join('\n');
+  toast('Merged '+nFiles+' files');
+});
+$('#mergeDl').addEventListener('click',()=>{
+  if(!mergedBook) return;
+  download(mergedName, mergedBook, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+});
+
+/* -------------------------------------------------------- 5. backup */
+$('#cfgSave').addEventListener('click',()=>{
+  download('attendance-admin-backup-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(CFG,null,1),'application/json');
+  toast('Backup downloaded');
+});
+$('#cfgLoadBtn').addEventListener('click',()=>$('#cfgLoad').click());
+$('#cfgLoad').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!d.sites||!d.supervisors) throw new Error('not an admin backup');
+    if(!confirm('Replace everything on this page with the backup?')) return;
+    CFG=d; renderAll(); toast('Restored');
+  }catch(err){ toast('Restore failed: '+err.message); }
+});
+$('#cfgWipe').addEventListener('click',()=>{
+  if(!confirm('Erase all sites, operators and supervisors from this browser?\n\nTake a backup first if you are not sure.')) return;
+  CFG={sites:[],supervisors:[],std:30}; renderAll(); toast('Erased');
+});
+
+renderAll();
+</script>
+</body>
+</html>
