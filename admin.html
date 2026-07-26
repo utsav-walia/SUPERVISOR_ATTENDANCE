@@ -441,6 +441,12 @@ function findHeader(rows){
   for(let i=0;i<Math.min(rows.length,25);i++){
     const m=mapHeader(rows[i]||[]);
     if(m.code!==undefined||(m.name!==undefined&&m.wd!==undefined)) return {i,map:m};
+    // tolerate a mistyped code header (one tab says "NA"): if NAME and the bank columns
+    // are present, whatever sits immediately left of NAME is the code column
+    if(m.name!==undefined && m.account!==undefined && m.name>0){
+      const j=m.name-1, row=rows[i]||[];
+      if(trim(row[j])){ m.code=j; return {i,map:m}; }
+    }
   }
   return null;
 }
