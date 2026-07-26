@@ -1,7 +1,7 @@
 /* Attendance CRM service worker — cache-first, fully offline. */
-const CACHE = 'attendance-crm-v1';
+const CACHE = 'attendance-crm-v2';
 const ASSETS = [
-  './', './index.html', './admin.html', './manifest.webmanifest',
+  './', './index.html', './admin.html', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'
 ];
 
@@ -19,6 +19,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // never cache calls to the Google Sheet backend
+  if (e.request.url.indexOf('script.google.com') > -1 ||
+      e.request.url.indexOf('script.googleusercontent.com') > -1) return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(hit => {
       if (hit) {

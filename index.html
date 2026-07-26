@@ -34,6 +34,14 @@ button{cursor:pointer;border:none;background:none}
 .appbar .sub{display:block;font-size:11px;font-weight:400;opacity:.8;margin-top:1px}
 .iconbtn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:20px}
 .iconbtn:active{background:rgba(255,255,255,.18)}
+/* cloud sync status */
+#sync{display:none;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:4px 9px;border-radius:999px;
+  background:rgba(255,255,255,.16);color:#fff;white-space:nowrap;flex:0 0 auto}
+#sync.on{display:flex}
+#sync .dot{width:7px;height:7px;border-radius:50%;background:#8fe0b4}
+#sync.busy .dot{background:#ffd88a;animation:pulse 1s infinite}
+#sync.bad{background:#8c2f28} #sync.bad .dot{background:#ffb4ae}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
 /* ---------- controls ---------- */
 .controls{position:sticky; top:0; z-index:30; background:var(--card); border-bottom:1px solid var(--line); padding:10px 12px 8px}
@@ -136,6 +144,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
   <div style="flex:1">
     <h1><span id="barTitle">Attendance CRM</span><span class="sub" id="barSub">Working Days · Overtime · Absent</span></h1>
   </div>
+  <button id="sync" title="Tap to sync now"><span class="dot"></span><span id="syncTxt">Synced</span></button>
   <button class="iconbtn" id="btnMenu" aria-label="Menu">☰</button>
 </div>
 
@@ -160,7 +169,8 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
   <div class="menu">
     <a href="#" data-act="import"><span class="ic">⇪</span><span><b>Import operators from Excel</b><small>Each sheet in the file becomes a site</small></span></a>
     <a href="#" data-act="addop"><span class="ic">＋</span><span><b>Add operator</b><small>Add one worker to the current site</small></span></a>
-    <a href="#" data-act="setup"><span class="ic">⚿</span><span><b>Load my setup file</b><small id="setupSub">Assigns your sites — sent to you by head office</small></span></a>
+    <a href="#" data-act="reload" data-cloud><span class="ic">⟳</span><span><b>Reload from head office</b><small id="reloadSub">Fetch the latest operator list and entries</small></span></a>
+    <a href="#" data-act="setup" data-nocloud><span class="ic">⚿</span><span><b>Load my setup file</b><small id="setupSub">Assigns your sites — sent to you by head office</small></span></a>
     <a href="#" data-act="addsite" data-unlocked><span class="ic">▤</span><span><b>Add site</b><small>Create a new site manually</small></span></a>
     <a href="#" data-act="editsite" data-unlocked><span class="ic">✎</span><span><b>Rename or delete this site</b><small id="editsiteSub">Current site</small></span></a>
     <a href="#" data-act="fill"><span class="ic">≡</span><span><b>Quick fill</b><small>Set WD for everyone still blank</small></span></a>
@@ -269,6 +279,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 
 <div id="toast"></div>
 
+<script src="config.js"></script>
 <script>
 /* =====================================================================
    Attendance CRM — offline PWA
@@ -598,7 +609,10 @@ function render(){
 
   if(!site){
     $('#chips').innerHTML='';
-    list.innerHTML = '<div class="empty"><b>No sites yet</b>Open the menu (☰) and load the setup file head office sent you.</div>';
+    list.innerHTML = '<div class="empty"><b>No sites yet</b>'+(API
+      ? (DB.token ? 'Waiting for head office. Tap the status button at the top to try again.'
+                  : 'Open the personal link head office sent you on WhatsApp.')
+      : 'Open the menu (☰) and load the setup file head office sent you.')+'</div>';
     return;
   }
   const std = stdDays();
@@ -641,7 +655,7 @@ function fld(e){
 
 /* -------------------------------------------------------------- events */
 $('#selSite').addEventListener('change', e=>{ DB.ui.site=e.target.value; save(); render(); });
-$('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); render(); });
+$('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); render(); if(cloudOn()) cloudBootstrap(true); });
 $('#q').addEventListener('input', render);
 
 $('#list').addEventListener('input', e=>{
@@ -665,6 +679,7 @@ $('#list').addEventListener('input', e=>{
   }
   card.classList.toggle('done', ent.wd!=null);
   updateChips();
+  queue(site, code);
 });
 $('#list').addEventListener('click', e=>{
   const b = e.target.closest('[data-edit]'); if(!b) return;
@@ -693,6 +708,9 @@ $('#btnMenu').addEventListener('click', ()=>{
     : 'Assigns your sites — sent to you by head office';
   // sites come from head office once a setup file is loaded
   $$('#shMenu [data-unlocked]').forEach(a=>a.style.display = DB.locked ? 'none' : '');
+  $$('#shMenu [data-cloud]').forEach(a=>a.style.display = cloudOn() ? '' : 'none');
+  $$('#shMenu [data-nocloud]').forEach(a=>a.style.display = cloudOn() ? 'none' : '');
+  if(cloudOn()) $('#reloadSub').textContent = pendingCount() ? pendingCount()+' entries still to send' : 'Everything is saved to head office';
   $('#menuNote').textContent = DB.sites.length+' site'+(DB.sites.length===1?'':'s')+' · '+nOps+' operators · '+Object.keys(DB.entries).length+' entries stored on this device.';
   show('#shMenu');
 });
@@ -703,6 +721,7 @@ $('#shMenu').addEventListener('click', e=>{
     if(act==='import') show('#shImport');
     else if(act==='addop'){ if(!DB.sites.length) return toast('Add a site first'); openOp(null); }
     else if(act==='setup') show('#shSetup');
+    else if(act==='reload') cloudBootstrap();
     else if(act==='addsite') openSite(null);
     else if(act==='editsite'){ if(!curSite()) return toast('No site selected'); openSite(curSite().id); }
     else if(act==='fill'){ if(!curSite()) return toast('Add a site first'); $('#fillVal').value=stdDays(); show('#shFill'); }
@@ -803,7 +822,7 @@ $('#fillRun').addEventListener('click', ()=>{
   const site=curSite(), ym=curMonth(); let n=0;
   for(const op of site.operators){
     const k=opKey(op), e=getEntry(site.id,ym,k);
-    if(e.wd==null && e.ot==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); n++; }
+    if(e.wd==null && e.ot==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); queue(site.id,k); n++; }
   }
   hide(); render(); toast(n+' operator'+(n===1?'':'s')+' set to WD '+v);
 });
@@ -858,6 +877,130 @@ $('#setupRun').addEventListener('click', async ()=>{
     toast(msg, 5200);
   }catch(err){ console.error(err); toast('Could not load setup file: '+err.message, 5000); }
 });
+
+/* =====================================================================
+   CLOUD MODE — Google Sheet backend
+   The supervisor's link carries his token: .../?s=k7f3m9qp2x
+   The token is remembered, so the installed icon works without it.
+   Entries are pushed the moment they are typed; anything that fails to
+   reach the sheet stays queued on the phone and goes up on its own.
+   ===================================================================== */
+const API = (window.CRM_API || '').trim();
+function tokenFromUrl(){
+  const m = location.search.match(/[?&]s=([A-Za-z0-9_-]+)/);
+  return m ? m[1] : '';
+}
+const cloudOn = () => !!(API && DB.token);
+
+function setSync(state, text){
+  const el = $('#sync');
+  el.classList.toggle('on', cloudOn());
+  el.classList.remove('busy','bad');
+  if(state==='busy') el.classList.add('busy');
+  if(state==='bad') el.classList.add('bad');
+  $('#syncTxt').textContent = text;
+}
+function pendingCount(){ return Object.keys(DB.pending||{}).length; }
+function showPending(){
+  const n = pendingCount();
+  if(n) setSync('bad', n+' not sent');
+  else setSync('ok', 'Saved');
+}
+
+async function apiGet(params){
+  const q = Object.keys(params).map(k=>k+'='+encodeURIComponent(params[k])).join('&');
+  const r = await fetch(API+'?'+q, {method:'GET', redirect:'follow'});
+  if(!r.ok) throw new Error('server '+r.status);
+  return r.json();
+}
+async function apiPost(body){
+  // text/plain keeps it a "simple" request, so Apps Script needs no CORS preflight
+  const r = await fetch(API, {method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
+  if(!r.ok) throw new Error('server '+r.status);
+  return r.json();
+}
+
+/* Pull this supervisor's sites, operators and this month's entries. */
+async function cloudBootstrap(silent){
+  if(!cloudOn()) return;
+  setSync('busy','Loading…');
+  try{
+    const d = await apiGet({action:'bootstrap', s:DB.token, month:curMonth()});
+    if(!d.ok) throw new Error(d.error||'refused');
+
+    DB.supervisor = d.supervisor || null;
+    DB.locked = true;
+    if(d.std) DB.settings = Object.assign({}, DB.settings, {std:d.std});
+
+    const keep = new Set(d.sites.map(s=>s.id));
+    DB.sites = d.sites.map(s=>({ id:s.id, name:cleanSiteName(s.name),
+      operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
+    // drop anything for sites he no longer holds
+    for(const k of Object.keys(DB.entries)) if(!keep.has(k.split('|')[0])) delete DB.entries[k];
+
+    // server is the truth, except for what we haven't managed to send yet
+    const ym = curMonth(), mine = {};
+    for(const k of Object.keys(DB.entries)){ const p=k.split('|'); if(p[1]===ym) mine[p[0]+'|'+p[2]]=k; }
+    for(const [sk, val] of Object.entries(d.entries||{})){
+      const [site, key] = sk.split('|');
+      if(DB.pending && DB.pending[site+'|'+key]) continue;      // local edit not yet sent — keep it
+      const k = site+'|'+ym+'|'+key;
+      DB.entries[k] = { wd: val.wd };
+      derive(site, ym, key);
+    }
+    if(!keep.has(DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
+    save(); render();
+    if(pendingCount()) flush(); else setSync('ok','Saved');
+    if(!silent) toast('Loaded '+DB.sites.length+' site(s) for '+((d.supervisor&&d.supervisor.name)||'you'));
+  }catch(err){
+    console.error(err);
+    setSync('bad','Offline');
+    if(!silent) toast('Could not reach head office: '+err.message+'. You can still type — it will send later.', 5200);
+  }
+}
+
+/* Queue one operator and push soon. */
+let flushT=null, retryMs=4000;
+function queue(site, key){
+  if(!cloudOn()) return;
+  DB.pending = DB.pending || {};
+  DB.pending[site+'|'+key] = 1;
+  save(); setSync('busy','Saving…');
+  clearTimeout(flushT); flushT = setTimeout(flush, 900);
+}
+let flushing=false;
+async function flush(){
+  if(!cloudOn() || flushing) return;
+  const keys = Object.keys(DB.pending||{});
+  if(!keys.length){ setSync('ok','Saved'); return; }
+  flushing = true; setSync('busy','Saving…');
+  const ym = curMonth();
+  const rows = keys.map(k=>{
+    const [site, key] = k.split('|');
+    const e = getEntry(site, ym, key);
+    return { site, key, wd: e.wd==null ? null : e.wd };
+  });
+  try{
+    const d = await apiPost({action:'save', s:DB.token, month:ym, rows});
+    if(!d.ok) throw new Error(d.error||'refused');
+    keys.forEach(k=>delete DB.pending[k]);
+    save(); retryMs = 4000; showPending();
+  }catch(err){
+    console.error(err);
+    setSync('bad', pendingCount()+' not sent');
+    retryMs = Math.min(retryMs*2, 60000);
+    clearTimeout(flushT); flushT = setTimeout(flush, retryMs);
+  }finally{ flushing = false; }
+}
+
+$('#sync').addEventListener('click', ()=>{
+  if(!cloudOn()) return;
+  if(pendingCount()) flush(); else cloudBootstrap();
+});
+window.addEventListener('online', ()=>{ if(cloudOn()) flush(); });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && cloudOn() && pendingCount()) flush(); });
+setInterval(()=>{ if(cloudOn() && pendingCount() && navigator.onLine) flush(); }, 30000);
 
 /* -------------------------------------------------------------- import */
 $('#impRun').addEventListener('click', async ()=>{
@@ -1022,6 +1165,17 @@ for(const s of DB.sites){ const used=new Set();
   for(const o of s.operators){ if(!o.key) o.key = makeKey(o.code, o.name, used); else used.add(o.key); } }
 deriveAll();                       // normalise anything stored by an older version
 render(); save();
+// the link carries the token once; keep it so the installed icon works without it
+const _t = tokenFromUrl();
+if(_t && _t !== DB.token){ DB.token = _t; DB.entries = {}; DB.pending = {}; save(); }
+if(_t && history.replaceState) history.replaceState(null, '', location.pathname);
+if(cloudOn()){
+  setSync('busy','Loading…');
+  render();
+  cloudBootstrap(true);
+} else if(API && !DB.token){
+  toast('Open the personal link head office sent you.', 5000);
+}
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }

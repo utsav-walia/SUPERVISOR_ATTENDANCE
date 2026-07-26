@@ -93,6 +93,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
   <button data-tab="t2">2 · Supervisors</button>
   <button data-tab="t3">3 · Issue setup files</button>
   <button data-tab="t4">4 · Merge returned files</button>
+  <button data-tab="t6">☁ Cloud &amp; links</button>
   <button data-tab="t5">Backup</button>
 </nav>
 
@@ -134,6 +135,21 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <span class="grow"></span>
       <span class="muted" id="supCount"></span>
     </div>
+  </div>
+  <div class="panel">
+    <h2>Or load them all from Excel</h2>
+    <p class="hint">Two columns is all it needs: <b>SUPERVISOR NAME</b> and <b>SITES</b>.
+      Sites can be comma-separated in one cell, or spread across extra columns headed SITE 2, SITE 3 and so on —
+      both work. Trailing <b>OK</b> in a site name is ignored. Existing supervisors are matched by name and updated.
+      PHONE and STATE columns are read if present, but are not required.</p>
+    <div class="bar">
+      <input type="file" id="supFile" accept=".xlsx,.xlsm" style="width:auto">
+      <button class="btn pri" id="supImport">Import supervisors</button>
+      <label class="muted" style="display:flex;gap:7px;align-items:center">
+        <input type="checkbox" id="supReplace" style="width:16px;height:16px;accent-color:var(--brand)"> Replace the whole list
+      </label>
+    </div>
+    <div class="log" id="supLog" style="margin-top:14px;display:none"></div>
   </div>
   <div class="panel" style="padding:0;overflow:hidden"><div id="supTable"></div></div>
 </section>
@@ -188,6 +204,42 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <button class="btn dgr" id="cfgWipe">Erase everything</button>
     </div>
   </div>
+</section>
+
+
+<!-- ========================================== 6. cloud ============== -->
+<section id="t6">
+  <div class="panel">
+    <h2>Connect to your Google Sheet</h2>
+    <p class="hint">Paste the Web app URL from Apps Script (it ends in <b>/exec</b>) and the ADMIN KEY that
+      <code>setUp()</code> printed. Both are stored in this browser only and are never put in the app itself.</p>
+    <div class="two" style="max-width:820px">
+      <div class="f"><label>Web app URL</label><input type="text" id="apiUrl" placeholder="https://script.google.com/macros/s/AKfy.../exec"></div>
+      <div class="f"><label>Admin key</label><input type="text" id="apiKey" placeholder="from the SETTINGS tab"></div>
+    </div>
+    <div class="bar">
+      <button class="btn" id="apiTest">Test connection</button>
+      <button class="btn pri" id="apiPush">Upload everything to the sheet</button>
+      <span class="grow"></span>
+      <button class="btn" id="cfgJs">Download config.js</button>
+    </div>
+    <p class="hint" style="margin:12px 0 0">
+      <b>config.js</b> is the one file the app needs in order to find your sheet. Download it and upload it to
+      your repo (or Netlify) alongside index.html. Without it the app stays in offline setup-file mode.</p>
+  </div>
+
+  <div class="panel">
+    <div class="bar" style="margin-bottom:10px">
+      <h2 style="margin:0">Supervisor links</h2><span class="grow"></span>
+      <button class="btn" id="linkBase">Set app address</button>
+      <button class="btn" id="linkCsv">Download all as CSV</button>
+    </div>
+    <p class="hint">Each link is that man\'s key. Send it to him and to nobody else \u2014 whoever holds it can see
+      those sites. If a phone is lost, press <b>New link</b> to make his old one stop working, then upload again.</p>
+    <div id="linkTable"></div>
+  </div>
+
+  <div class="panel"><div class="log" id="cloudLog">Not connected yet.</div></div>
 </section>
 
 </main>
@@ -401,7 +453,7 @@ function download(name, data, mime){
 /* ------------------------------------------------------------- config */
 const KEY='attendance-crm-admin.v1';
 let CFG = (()=>{ try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.sites) return d; }catch(e){}
-  return { sites:[], supervisors:[], std:30 }; })();
+  return { sites:[], supervisors:[], std:30, api:'', key:'', base:'' }; })();
 function saveCfg(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(e){ toast('Browser storage full'); } }
 const siteById = id => CFG.sites.find(s=>s.id===id);
 function supsOfSite(id){ return CFG.supervisors.filter(s=>s.siteIds.includes(id)); }
@@ -411,10 +463,11 @@ $$('nav button').forEach(b=>b.addEventListener('click',()=>{
   $$('nav button').forEach(x=>x.classList.toggle('on',x===b));
   $$('main section').forEach(s=>s.classList.toggle('on', s.id===b.dataset.tab));
   if(b.dataset.tab==='t3') renderIssue();
+  if(b.dataset.tab==='t6'){ $('#apiUrl').value=CFG.api||''; $('#apiKey').value=CFG.key||''; renderLinks(); }
 }));
 
 /* ------------------------------------------------------------ render */
-function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHdr(); saveCfg(); }
+function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHdr(); renderLinks(); saveCfg(); }
 function renderHdr(){
   const ops=CFG.sites.reduce((a,s)=>a+s.operators.length,0);
   $('#hdrStat').textContent = CFG.sites.length+' sites · '+ops+' operators · '+CFG.supervisors.length+' supervisors';
@@ -732,6 +785,229 @@ $('#cfgLoad').addEventListener('change', async e=>{
 $('#cfgWipe').addEventListener('click',()=>{
   if(!confirm('Erase all sites, operators and supervisors from this browser?\n\nTake a backup first if you are not sure.')) return;
   CFG={sites:[],supervisors:[],std:30}; renderAll(); toast('Erased');
+});
+
+/* ------------------------------------------------------- 6. cloud sync */
+function clog(lines){ $('#cloudLog').innerHTML = [].concat(lines).join('\n'); }
+const cesc = s => esc(s);
+function ensureTokens(){
+  let n=0;
+  CFG.supervisors.forEach(s=>{ if(!s.token){ s.token = randomToken(10); n++; } });
+  if(n) saveCfg();
+  return n;
+}
+function randomToken(n){
+  const c='abcdefghijkmnpqrstuvwxyz23456789'; let s='';
+  const a=new Uint32Array(n); (crypto||{getRandomValues:null}).getRandomValues(a);
+  for(let i=0;i<n;i++) s+=c[a[i]%c.length];
+  return s;
+}
+const appBase = () => (CFG.base||'').replace(/[?#].*$/,'').replace(/index\.html$/,'').replace(/\/?$/,'/');
+const supLink = s => appBase() ? appBase()+'?s='+s.token : '(set the app address first)';
+
+async function apiCall(body){
+  if(!CFG.api) throw new Error('no Web app URL set');
+  const r = await fetch(CFG.api, {method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(body)});
+  if(!r.ok) throw new Error('server '+r.status);
+  const d = await r.json();
+  if(!d.ok) throw new Error(d.error||'refused');
+  return d;
+}
+$('#apiUrl').addEventListener('change', e=>{ CFG.api=trim(e.target.value); saveCfg(); });
+$('#apiKey').addEventListener('change', e=>{ CFG.key=trim(e.target.value); saveCfg(); });
+
+$('#apiTest').addEventListener('click', async ()=>{
+  CFG.api=trim($('#apiUrl').value); CFG.key=trim($('#apiKey').value); saveCfg();
+  clog('<span class="dim">Testing…</span>');
+  try{
+    const d = await apiCall({action:'ping'});
+    clog('<span class="ok">✓ Connected. Sheet clock says '+cesc(d.time)+'</span>');
+    toast('Connection works');
+  }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Could not connect'); }
+});
+
+$('#apiPush').addEventListener('click', async ()=>{
+  CFG.api=trim($('#apiUrl').value); CFG.key=trim($('#apiKey').value); saveCfg();
+  if(!CFG.api||!CFG.key) return toast('Enter the Web app URL and admin key first');
+  if(!CFG.sites.length) return toast('Load your master file first');
+  const made = ensureTokens();
+  clog('<span class="dim">Uploading…</span>');
+  try{
+    const d = await apiCall({ action:'adminPush', k:CFG.key, std:CFG.std||30,
+      sites: CFG.sites.map(s=>({ id:s.id, name:s.name, state:s.state||'',
+        operators: s.operators.map(o=>({ key:opKey(o), code:o.code||'', name:o.name||'',
+          father:o.father||'', account:o.account||'', ifsc:o.ifsc||'' })) })),
+      supervisors: CFG.supervisors.map(s=>({ token:s.token, name:s.name, state:s.state||'',
+        phone:s.phone||'', siteIds:s.siteIds })) });
+    const out = ['<span class="ok">✓ Uploaded to the sheet</span>', '',
+      '   sites        '+d.sites, '   operators    '+d.operators, '   supervisors  '+d.supervisors];
+    if(made) out.push('', '<span class="warn">'+made+' supervisor(s) were given a new link just now — send them out.</span>');
+    const noSites = CFG.supervisors.filter(s=>!s.siteIds.length);
+    if(noSites.length) out.push('', '<span class="warn">No sites assigned: '+noSites.map(s=>cesc(s.name)).join(', ')+'</span>');
+    clog(out); renderLinks(); toast('Uploaded');
+  }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Upload failed: '+err.message, 4500); }
+});
+
+$('#cfgJs').addEventListener('click', ()=>{
+  const url = trim($('#apiUrl').value) || CFG.api;
+  if(!url) return toast('Enter the Web app URL first');
+  download('config.js',
+    '/* Attendance CRM — generated by the admin console */\nwindow.CRM_API = "'+url+'";\n',
+    'application/javascript');
+  toast('Upload this file next to index.html');
+});
+
+$('#linkBase').addEventListener('click', ()=>{
+  const v = prompt('Where is the app published?\n\nExample:\nhttps://utsav-walia.github.io/SUPERVISOR_ATTENDANCE/', CFG.base||'');
+  if(v===null) return;
+  CFG.base = trim(v); saveCfg(); renderLinks();
+});
+$('#linkCsv').addEventListener('click', ()=>{
+  ensureTokens();
+  const rows = [['SUPERVISOR','STATE','PHONE','SITES','LINK']].concat(
+    CFG.supervisors.map(s=>[s.name, s.state||'', s.phone||'',
+      s.siteIds.map(i=>(siteById(i)||{name:'?'}).name).join(' + '), supLink(s)]));
+  download('SUPERVISOR_LINKS.csv',
+    rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'), 'text/csv');
+});
+
+function waMessage(s){
+  return 'Attendance app — please do this once.\n\n'+
+    '1. Open your personal link:\n   '+supLink(s)+'\n\n'+
+    '2. If it opens inside WhatsApp, tap ⋮ at the top right and choose "Open in Chrome".\n\n'+
+    '3. In Chrome tap ⋮ → "Install app" → Install.\n'+
+    '   An icon comes on your home screen. Always open it from that icon.\n\n'+
+    'Your sites will already be there — nothing to load.\n\n'+
+    'Every month: pick the Site and Month at the top and type WD for each man. '+
+    'OT and AB fill in by themselves and everything reaches head office on its own.';
+}
+function renderLinks(){
+  const el=$('#linkTable');
+  if(!CFG.supervisors.length){ el.innerHTML='<div class="empty"><b>No supervisors yet</b>Add them on tab 2.</div>'; return; }
+  ensureTokens();
+  const rows = CFG.supervisors.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>
+    '<tr><td><b>'+cesc(s.name)+'</b>'+(s.phone?'<br><span class="muted">'+cesc(s.phone)+'</span>':'')+'</td>'+
+    '<td class="num">'+s.siteIds.length+'</td>'+
+    '<td style="font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all">'+cesc(supLink(s))+'</td>'+
+    '<td class="right" style="white-space:nowrap">'+
+      '<button class="btn sm" data-copy="'+s.id+'">Copy link</button> '+
+      '<button class="btn sm" data-msg="'+s.id+'">Copy message</button> '+
+      '<button class="btn sm dgr" data-new="'+s.id+'">New link</button></td></tr>').join('');
+  el.innerHTML='<table><thead><tr><th>Supervisor</th><th class="right">Sites</th><th>Personal link</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  const get=id=>CFG.supervisors.find(x=>x.id===id);
+  el.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',()=>{
+    navigator.clipboard.writeText(supLink(get(b.dataset.copy))); toast('Link copied'); }));
+  el.querySelectorAll('[data-msg]').forEach(b=>b.addEventListener('click',()=>{
+    navigator.clipboard.writeText(waMessage(get(b.dataset.msg))); toast('Message copied — paste into WhatsApp'); }));
+  el.querySelectorAll('[data-new]').forEach(b=>b.addEventListener('click',()=>{
+    const s=get(b.dataset.new);
+    if(!confirm('Give '+s.name+' a brand new link?\n\nHis old link stops working as soon as you upload again.')) return;
+    s.token=randomToken(10); saveCfg(); renderLinks();
+    toast('New link made — press "Upload everything to the sheet", then send it to him', 5000); }));
+}
+
+/* ------------------------------------ import supervisors from Excel */
+const SUP_HEAD = {
+  name:  ['SUPERVISORNAME','NAME','SUPERVISOR','INCHARGE','MANAGER'],
+  phone: ['PHONE','PHONENO','PHONENUMBER','MOBILE','MOBILENO','CONTACT','CONTACTNO'],
+  state: ['STATE','REGION','ZONE','LOCATION']
+};
+const isSiteHead = h => /^SITES?\d*$/.test(h) || /^SITENAMES?\d*$/.test(h) || /^SITEALLOTTED\d*$/.test(h);
+
+function siteLookup(){
+  const m = {};
+  CFG.sites.forEach(s=>{ m[norm(cleanSiteName(s.name))] = s.id; });
+  return m;
+}
+$('#supImport').addEventListener('click', async ()=>{
+  const f = $('#supFile').files[0]; if(!f) return toast('Choose the supervisor file first');
+  if(!CFG.sites.length) return toast('Load your master site file on tab 1 first');
+  const replace = $('#supReplace').checked;
+  const L=[], line=(cls,t)=>L.push('<span class="'+cls+'">'+esc(t)+'</span>');
+  try{
+    const sheets = await parseXlsx(await f.arrayBuffer());
+    const look = siteLookup();
+    let added=0, updated=0, skipped=0;
+    const unknown = {}, seen = new Set();
+    if(replace) CFG.supervisors = [];
+
+    for(const sh of sheets){
+      // find the header row
+      let hi=-1, map=null, siteCols=null;
+      for(let i=0;i<Math.min(sh.rows.length,25);i++){
+        const row = sh.rows[i]||[], m={}, sc=[];
+        row.forEach((cell,j)=>{
+          const h = norm(cell); if(!h) return;
+          if(isSiteHead(h)){ sc.push(j); return; }
+          for(const [f,alts] of Object.entries(SUP_HEAD)) if(m[f]===undefined && alts.includes(h)) m[f]=j;
+        });
+        if(m.name!==undefined && sc.length){ hi=i; map=m; siteCols=sc; break; }
+      }
+      if(hi<0){ line('dim','– '+sh.name+': no SUPERVISOR NAME / SITES header, skipped'); continue; }
+
+      for(let i=hi+1;i<sh.rows.length;i++){
+        const r = sh.rows[i]||[];
+        const name = trim(map.name!==undefined ? r[map.name] : '');
+        if(!name) continue;
+        if(/^\(?DELETE|EXAMPLE|SAMPLE/i.test(name)) continue;        // template placeholder rows
+
+        const wanted = [];
+        siteCols.forEach(j=>{
+          String(r[j]===undefined?'':r[j]).split(/[,;/\n|]+/).forEach(x=>{ x=trim(x); if(x) wanted.push(x); });
+        });
+
+        const ids = [];
+        wanted.forEach(w=>{
+          const id = look[norm(cleanSiteName(w))];
+          if(id){ if(!ids.includes(id)) ids.push(id); }
+          else (unknown[w] = unknown[w] || []).push(name);
+        });
+        if(!ids.length && !wanted.length){ skipped++; line('warn','! '+name+' — no sites listed, skipped'); continue; }
+
+        const rec = { name, state: trim(map.state!==undefined?r[map.state]:''),
+                      phone: trim(map.phone!==undefined?r[map.phone]:''), siteIds: ids };
+        const ex = CFG.supervisors.find(x=>norm(x.name)===norm(name));
+        if(ex){ ex.state=rec.state||ex.state; ex.phone=rec.phone||ex.phone; ex.siteIds=ids; updated++; }
+        else { CFG.supervisors.push(Object.assign({id:uid(), token:randomToken(10)}, rec)); added++; }
+        seen.add(norm(name));
+      }
+    }
+
+    saveCfg(); renderAll();
+
+    line('ok','✓ '+added+' supervisor(s) added, '+updated+' updated'+(skipped?', '+skipped+' skipped':''));
+    const bad = Object.keys(unknown);
+    if(bad.length){
+      L.push('');
+      line('bad','Site names not found in your master list ('+bad.length+'):');
+      bad.slice(0,40).forEach(b=>line('bad','   • "'+b+'"  → listed for '+[...new Set(unknown[b])].join(', ')));
+      if(bad.length>40) line('dim','   … and '+(bad.length-40)+' more');
+      L.push('');
+      line('dim','Check the spelling against the SITE NAMES tab of the template.');
+    }
+    const orphan = CFG.sites.filter(s=>!supsOfSite(s.id).length);
+    if(orphan.length){
+      L.push('');
+      line('warn','Sites with nobody assigned ('+orphan.length+'):');
+      orphan.forEach(s=>line('warn','   • '+s.name+'  ('+s.operators.length+' operators)'));
+    }
+    const shared = CFG.sites.filter(s=>supsOfSite(s.id).length>1);
+    if(shared.length){
+      L.push('');
+      line('warn','Sites held by more than one supervisor ('+shared.length+'):');
+      shared.forEach(s=>line('warn','   • '+s.name+'  → '+supsOfSite(s.id).map(x=>x.name).join(', ')));
+    }
+    if(!bad.length && !orphan.length && !shared.length){ L.push(''); line('ok','Every site has exactly one supervisor. Nothing to fix.'); }
+
+    $('#supLog').style.display='block'; $('#supLog').innerHTML = L.join('\n');
+    toast(added+' added, '+updated+' updated');
+  }catch(err){
+    console.error(err);
+    $('#supLog').style.display='block';
+    $('#supLog').innerHTML = '<span class="bad">✗ '+esc(err.message)+'</span>';
+    toast('Import failed: '+err.message, 4500);
+  }
 });
 
 renderAll();
