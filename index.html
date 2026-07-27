@@ -71,6 +71,10 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 #list{padding:0 10px calc(96px + var(--safe-b))}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;padding:10px 11px}
 .card.done{border-color:#bfe3cf;background:#fbfffc}
+.card.barred{border-color:#e9b9b5;background:#fffafa}
+.card.barred .nm,.card.barred .meta{opacity:.6}
+.fault{margin-top:2px;padding:9px 10px;border-radius:9px;background:#fdeceb;
+  color:var(--bad);font-size:12px;font-weight:600;line-height:1.4}
 .card.warn{border-color:#f0d9a8}
 .chead{display:flex;align-items:baseline;gap:8px}
 .code{font-size:11px;font-weight:700;background:var(--brand-l);color:var(--brand);padding:2px 7px;border-radius:6px;letter-spacing:.4px;flex:0 0 auto}
@@ -637,12 +641,26 @@ function render(){
     return;
   }
   const std = stdDays();
-  let filled=0, tWd=0, tOt=0, tAb=0, html='', shown=0;
+  // Two rules head office set: every man needs an EMP Code, and no code may be
+  // shared. A man who breaks either cannot be paid against, so he is shown but
+  // locked — better a visible complaint than attendance filed against nobody.
+  const codeCount = {};
+  DB.sites.forEach(s => s.operators.forEach(o => {
+    if(o.code) codeCount[o.code] = (codeCount[o.code]||0) + 1; }));
+  const faultOf = op => !op.code
+      ? 'No EMP Code. Attendance cannot be recorded — tell head office.'
+      : codeCount[op.code] > 1
+        ? 'EMP Code '+op.code+' is given to more than one man. Tell head office.'
+        : '';
+
+  let filled=0, tWd=0, tOt=0, tAb=0, html='', shown=0, blocked=0, payable=0;
   for(const op of site.operators){
+    const fault = faultOf(op);
+    if(fault) blocked++; else payable++;
     const e = getEntry(site.id, ym, opKey(op));
     const has = e.wd!=null || e.ot!=null || e.ab!=null;
-    if(has) filled++;
-    tWd += (+e.wd||0); tOt += (+e.ot||0); tAb += (+e.ab||0);
+    if(has && !fault) filled++;
+    if(!fault){ tWd += (+e.wd||0); tOt += (+e.ot||0); tAb += (+e.ab||0); }
     if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
               norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
     shown++;
@@ -651,16 +669,18 @@ function render(){
     if(op.account) bits.push('<span class="acct">'+xmlEsc(String(op.account))+'</span>');
     if(op.ifsc)    bits.push('<span>'+xmlEsc(op.ifsc)+'</span>');
     const meta = bits.join('<i>·</i>');
-    html += '<div class="card '+(has?'done':'')+'" data-key="'+xmlEsc(opKey(op))+'">'+
+    html += '<div class="card '+(fault?'barred':(has?'done':''))+'" data-key="'+xmlEsc(opKey(op))+'">'+
       '<div class="chead"><span class="code'+(op.code?'':' nocode')+'">'+xmlEsc(op.code||'NO CODE')+'</span>'+
       '<span class="nm">'+xmlEsc(op.name||'(no name)')+'</span>'+
-      '<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button></div>'+
+      (fault?'':'<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button>')+'</div>'+
       '<div class="meta">'+(meta||'—')+'</div>'+
-      '<div class="inputs">'+ fld(e) +'</div></div>';
+      (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
+             : '<div class="inputs">'+ fld(e) +'</div>')+'</div>';
   }
   $('#chips').innerHTML =
-    '<span class="chip">Operators <b>'+site.operators.length+'</b></span>'+
-    '<span class="chip">Filled <b>'+filled+'/'+site.operators.length+'</b></span>'+
+    '<span class="chip">Operators <b>'+payable+'</b></span>'+
+    (blocked?'<span class="chip r">Blocked <b>'+blocked+'</b></span>':'')+
+    '<span class="chip">Filled <b>'+filled+'/'+payable+'</b></span>'+
     '<span class="chip g">Total WD <b>'+tWd+'</b></span>'+
     '<span class="chip b">Total OT <b>'+tOt+'</b></span>'+
     '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
@@ -1123,9 +1143,13 @@ function buildBook(){
   const ym = curMonth(), all = $('#expAll').checked, onlyFilled = $('#expOnlyFilled').checked;
   const sites = all ? DB.sites : [curSite()];
   const widths = [11,26,26,7,7,7,22,15];
+  const seen = {};
+  DB.sites.forEach(s => s.operators.forEach(o => {
+    if(o.code) seen[o.code] = (seen[o.code]||0) + 1; }));
   const sheets = sites.map(site=>{
     const rows = [COLS.slice()];
     for(const op of site.operators){
+      if(!op.code || seen[op.code] > 1) continue;   // no code, or a shared one: not payable
       const e = getEntry(site.id, ym, opKey(op));
       const has = e.wd!=null || e.ot!=null || e.ab!=null;
       if(onlyFilled && !has) continue;
