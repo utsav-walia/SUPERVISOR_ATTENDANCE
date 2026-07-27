@@ -97,6 +97,13 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 .inp.ot .out.set{color:var(--ot);background:#eef4fa}
 .inp.ab .out.set{color:var(--ab);background:#fdf0ef}
 .empty{text-align:center;color:var(--muted);padding:48px 24px;line-height:1.6}
+.fixbox{max-width:340px;margin:22px auto 0;text-align:left}
+.fixbox label{display:block;font-size:11px;font-weight:700;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.fixbox input{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;
+  font-size:15px;background:#fff;color:var(--ink)}
+.fixbox button{width:100%;margin-top:9px;padding:13px;border-radius:10px;border:0;
+  background:var(--brand);color:#fff;font-size:15px;font-weight:700}
 .empty b{display:block;color:var(--ink);font-size:16px;margin-bottom:6px}
 
 /* ---------- fab ---------- */
@@ -615,9 +622,17 @@ function render(){
 
   if(!site){
     $('#chips').innerHTML='';
-    list.innerHTML = '<div class="empty"><b>No sites yet</b>'+(API
-      ? (DB.token ? 'Waiting for head office. Tap the status button at the top to try again.'
-                  : 'Open the personal link head office sent you on WhatsApp.')
+    // An installed home-screen icon cannot be sent a link, so let him paste it in.
+    const paste = '<div class="fixbox">'+
+      '<label for="linkIn">Paste your link from WhatsApp</label>'+
+      '<input type="text" id="linkIn" inputmode="url" autocomplete="off" '+
+        'autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://…?s=…">'+
+      '<button id="linkGo">Open my sites</button></div>';
+    const head = linkRefused ? 'This link is not recognised' : 'No sites yet';
+    list.innerHTML = '<div class="empty"><b>'+head+'</b>'+(API
+      ? (linkRefused ? 'Ask head office for your link again, then paste it below.'+paste
+        : DB.token ? 'Waiting for head office. Tap the status button at the top to try again.'+paste
+                   : 'Open the personal link head office sent you on WhatsApp.'+paste)
       : 'Open the menu (☰) and load the setup file head office sent you.')+'</div>';
     return;
   }
@@ -897,6 +912,7 @@ $('#setupRun').addEventListener('click', async ()=>{
    reach the sheet stays queued on the phone and goes up on its own.
    ===================================================================== */
 const API = (window.CRM_API || '').trim();
+let linkRefused = false;          // the server said this token is not one of ours
 function tokenFromUrl(){
   const m = location.search.match(/[?&]s=([A-Za-z0-9_-]+)/);
   return m ? m[1] : '';
@@ -938,7 +954,9 @@ async function cloudBootstrap(silent){
   setSync('busy','Loading…');
   try{
     const d = await apiGet({action:'bootstrap', s:DB.token, month:curMonth()});
-    if(!d.ok) throw new Error(d.error||'refused');
+    // the server answered and said no: a link problem, not a signal problem
+    if(!d.ok){ const e = new Error(d.error||'refused'); e.refused = true; throw e; }
+    linkRefused = false;
 
     DB.supervisor = d.supervisor || null;
     DB.locked = true;
@@ -966,8 +984,16 @@ async function cloudBootstrap(silent){
     if(!silent) toast('Loaded '+DB.sites.length+' site(s) for '+((d.supervisor&&d.supervisor.name)||'you'));
   }catch(err){
     console.error(err);
-    setSync('bad','Offline');
-    if(!silent) toast('Could not reach head office: '+err.message+'. You can still type — it will send later.', 5200);
+    if(err.refused){
+      // typing will not help here — he needs the right link
+      linkRefused = true;
+      setSync('bad','Link not valid');
+      render();
+      toast(err.message, 6000);
+    }else{
+      setSync('bad','Offline');
+      if(!silent) toast('Could not reach head office: '+err.message+'. You can still type — it will send later.', 5200);
+    }
   }
 }
 
@@ -1178,6 +1204,26 @@ deriveAll();                       // normalise anything stored by an older vers
 render(); save();
 const _t = tokenFromUrl();
 if(_t && _t !== DB.token){ DB.token = _t; DB.entries = {}; DB.pending = {}; save(); }
+
+/* Repair route for an installed icon that was saved without a token: he pastes
+   the WhatsApp link and the app adopts it. Delegated, because the empty screen
+   is rebuilt on every render. */
+document.addEventListener('click', e => {
+  if(!e.target || e.target.id !== 'linkGo') return;
+  const raw = ($('#linkIn') || {}).value || '';
+  const m = String(raw).match(/[?&]s=([A-Za-z0-9_-]+)/) ||
+            String(raw).trim().match(/^([A-Za-z0-9_-]{6,})$/);
+  if(!m) return toast('That is not the whole link. Copy it again from WhatsApp.', 3200);
+  const tok = m[1];
+  if(tok !== DB.token){
+    DB.token = tok; DB.entries = {}; DB.pending = {};
+    DB.sites = []; DB.supervisor = null; save();
+  }
+  linkRefused = false;
+  pinToken(tok);
+  setSync('busy','Loading…'); render();
+  cloudBootstrap();
+});
 
 /* The token has to stay in the address bar. "Add to Home Screen" saves
    whatever URL is showing, and on iPhone the installed icon gets its own
