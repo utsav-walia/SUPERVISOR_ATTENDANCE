@@ -1184,14 +1184,17 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const wd = r && r.wd!=null ? r.wd : null;
         const ot = r && r.ot!=null ? r.ot : null;
         const ab = r && r.ab!=null ? r.ab : null;
-        if(wd!=null){ filled++; tWd+=wd; tOt+=ot||0; tAb+=ab||0; }
+        // OT is typed separately now, so a man may have OT without WD
+        if(wd!=null || ot!=null) filled++;
+        tWd+=wd||0; tOt+=ot||0; tAb+=ab||0;
         rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, ot, ab,
                    {v:op.account||''}, {v:op.ifsc||''}]);
       });
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
       have.forEach((r,k)=>{ if(known.has(k)) return;
-        if(r.wd!=null){ filled++; tWd+=r.wd; tOt+=r.ot||0; tAb+=r.ab||0; }
+        if(r.wd!=null || r.ot!=null) filled++;
+        tWd+=r.wd||0; tOt+=r.ot||0; tAb+=r.ab||0;
         rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, r.ot, r.ab,
                    {v:r.account||''}, {v:r.ifsc||''}]); });
 
