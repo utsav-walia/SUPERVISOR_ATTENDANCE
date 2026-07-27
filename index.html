@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
 <meta name="theme-color" content="#0f4c81">
 <title>Attendance CRM</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Attendance">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 :root{
   --brand:#0f4c81; --brand-d:#0b3a63; --brand-l:#e8f0f8;
@@ -1172,10 +1176,33 @@ for(const s of DB.sites){ const used=new Set();
   for(const o of s.operators){ if(!o.key) o.key = makeKey(o.code, o.name, used); else used.add(o.key); } }
 deriveAll();                       // normalise anything stored by an older version
 render(); save();
-// the link carries the token once; keep it so the installed icon works without it
 const _t = tokenFromUrl();
 if(_t && _t !== DB.token){ DB.token = _t; DB.entries = {}; DB.pending = {}; save(); }
-if(_t && history.replaceState) history.replaceState(null, '', location.pathname);
+
+/* The token has to stay in the address bar. "Add to Home Screen" saves
+   whatever URL is showing, and on iPhone the installed icon gets its own
+   private storage — nothing typed in Safari carries across. Strip the token
+   and the icon opens to "No sites yet" forever. */
+function pinToken(tok){
+  if(!tok) return;
+  if(location.search.indexOf('s=') < 0 && history.replaceState)
+    history.replaceState(null, '', location.pathname + '?s=' + tok);
+
+  // and in the manifest, for browsers that install start_url instead
+  const link = document.querySelector('link[rel="manifest"]');
+  if(!link || !window.Blob || !URL.createObjectURL) return;
+  const href = link.getAttribute('href');
+  if(!href || href.slice(0,5) === 'blob:') return;
+  fetch(href).then(r => r.json()).then(m => {
+    const abs = u => new URL(u, location.href).href;
+    m.start_url = abs('./index.html?s=' + tok);
+    m.scope     = abs('./');
+    if(Array.isArray(m.icons)) m.icons = m.icons.map(i => Object.assign({}, i, {src: abs(i.src)}));
+    link.setAttribute('href', URL.createObjectURL(
+      new Blob([JSON.stringify(m)], {type:'application/manifest+json'})));
+  }).catch(()=>{});          // manifest unreachable: the address bar still carries it
+}
+pinToken(DB.token);
 if(cloudOn()){
   setSync('busy','Loading…');
   render();
