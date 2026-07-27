@@ -134,7 +134,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       that happens so it isn't done by mistake.</p>
     <div class="bar">
       <button class="btn pri" id="addSup">Add supervisor</button>
-      <input type="text" id="supQ" placeholder="Search name, state or site…" style="max-width:320px">
+      <input type="text" id="supQ" placeholder="Search name or site…" style="max-width:320px">
       <span class="grow"></span>
       <span class="muted" id="supCount"></span>
     </div>
@@ -144,7 +144,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <p class="hint">Two columns is all it needs: <b>SUPERVISOR NAME</b> and <b>SITES</b>.
       Sites can be comma-separated in one cell, or spread across extra columns headed SITE 2, SITE 3 and so on —
       both work. Trailing <b>OK</b> in a site name is ignored. Existing supervisors are matched by name and updated.
-      PHONE and STATE columns are read if present, but are not required.</p>
+      A PHONE column is read if present, but is not required.</p>
     <div class="bar">
       <input type="file" id="supFile" accept=".xlsx,.xlsm" style="width:auto">
       <button class="btn pri" id="supImport">Import supervisors</button>
@@ -238,7 +238,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <div class="bar" style="margin-bottom:10px">
       <h2 style="margin:0">Supervisor links</h2><span class="grow"></span>
       <button class="btn" id="linkBase">Set app address</button>
-      <button class="btn" id="linkCsv">Download all as CSV</button>
+      <button class="btn" id="linkCsv">Download all as Excel</button>
     </div>
     <p class="hint">Each link is that man's key. Send it to him and to nobody else — whoever holds it can see
       those sites. If a phone is lost, press <b>New link</b> to make his old one stop working, then upload again.</p>
@@ -254,10 +254,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
 <dialog id="dlgSup">
   <div class="head"><h3 id="supTitle">Add supervisor</h3><p class="muted" style="margin:0;font-size:13px">Tick every site this man covers.</p></div>
   <div class="body">
-    <div class="two">
-      <div class="f"><label>Name</label><input type="text" id="sName" autocomplete="off"></div>
-      <div class="f"><label>State</label><input type="text" id="sState" autocomplete="off" placeholder="e.g. Uttar Pradesh"></div>
-    </div>
+    <div class="f"><label>Name</label><input type="text" id="sName" autocomplete="off"></div>
     <div class="f"><label>Phone / ID <span class="muted" style="text-transform:none">(optional)</span></label><input type="text" id="sPhone" autocomplete="off"></div>
     <div class="f">
       <label>Sites <span class="muted" id="sSel" style="text-transform:none;letter-spacing:0"></span></label>
@@ -280,10 +277,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
 <dialog id="dlgSite">
   <div class="head"><h3 id="siteTitle">Add site</h3></div>
   <div class="body">
-    <div class="two">
-      <div class="f"><label>Site name</label><input type="text" id="stName" autocomplete="off"></div>
-      <div class="f"><label>State</label><input type="text" id="stState" autocomplete="off"></div>
-    </div>
+    <div class="f"><label>Site name</label><input type="text" id="stName" autocomplete="off"></div>
     <p class="muted" style="font-size:12.5px;margin:0">The site name becomes the sheet name in every export, so keep it
       exactly as you want it to appear in payroll.</p>
   </div>
@@ -492,13 +486,12 @@ function renderSites(){
   const rows = CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{
     const sup=supsOfSite(s.id);
     return '<tr><td><b>'+esc(s.name)+'</b></td>'+
-      '<td>'+(s.state?esc(s.state):'<span class="muted">—</span>')+'</td>'+
       '<td class="num">'+s.operators.length+'</td>'+
       '<td>'+(sup.length?sup.map(x=>'<span class="tag">'+esc(x.name)+'</span>').join('')
                        :'<span class="tag none">unassigned</span>')+'</td>'+
       '<td class="right"><button class="btn sm" data-site="'+s.id+'">Edit</button></td></tr>';
   }).join('');
-  el.innerHTML='<table><thead><tr><th>Site</th><th>State</th><th class="right">Operators</th><th>Supervisor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th><th>Supervisor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
   el.querySelectorAll('[data-site]').forEach(b=>b.addEventListener('click',()=>openSite(b.dataset.site)));
 }
 function renderSups(){
@@ -507,20 +500,19 @@ function renderSups(){
   if(!CFG.supervisors.length){ el.innerHTML='<div class="empty"><b>No supervisors yet</b>Add the first one above.</div>'; return; }
   const list = CFG.supervisors.filter(s=>{
     if(!q) return true;
-    const hay = norm(s.name)+norm(s.state)+norm(s.phone)+s.siteIds.map(i=>norm((siteById(i)||{}).name)).join('');
+    const hay = norm(s.name)+norm(s.phone)+s.siteIds.map(i=>norm((siteById(i)||{}).name)).join('');
     return hay.includes(q);
-  }).sort((a,b)=>(a.state||'').localeCompare(b.state||'')||a.name.localeCompare(b.name));
+  }).sort((a,b)=>a.name.localeCompare(b.name));
   if(!list.length){ el.innerHTML='<div class="empty"><b>No matches</b></div>'; return; }
   const rows=list.map(s=>{
     const ops=s.siteIds.reduce((a,i)=>a+((siteById(i)||{operators:[]}).operators.length),0);
     return '<tr><td><b>'+esc(s.name)+'</b>'+(s.phone?'<br><span class="muted">'+esc(s.phone)+'</span>':'')+'</td>'+
-      '<td>'+(s.state?esc(s.state):'<span class="muted">—</span>')+'</td>'+
       '<td>'+(s.siteIds.length?s.siteIds.map(i=>'<span class="tag">'+esc((siteById(i)||{name:'?'}).name)+'</span>').join('')
                               :'<span class="tag none">no sites</span>')+'</td>'+
       '<td class="num">'+ops+'</td>'+
       '<td class="right"><button class="btn sm" data-sup="'+s.id+'">Edit</button></td></tr>';
   }).join('');
-  el.innerHTML='<table><thead><tr><th>Supervisor</th><th>State</th><th>Sites</th><th class="right">Operators</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.innerHTML='<table><thead><tr><th>Supervisor</th><th>Sites</th><th class="right">Operators</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
   el.querySelectorAll('[data-sup]').forEach(b=>b.addEventListener('click',()=>openSup(b.dataset.sup)));
 }
 $('#supQ').addEventListener('input', renderSups);
@@ -535,7 +527,7 @@ $('#masterRun').addEventListener('click', async ()=>{
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
       const id=slug(sh.name), clean=cleanSiteName(sh.name);
       let site=CFG.sites.find(s=>s.id===id);
-      if(!site){ site={id, name:clean, state:'', operators:[]}; CFG.sites.push(site); nSites++; }
+      if(!site){ site={id, name:clean, operators:[]}; CFG.sites.push(site); nSites++; }
       else site.name = clean;
       const used=new Set(site.operators.map(opKey));
       for(let i=h.i+1;i<sh.rows.length;i++){
@@ -564,7 +556,7 @@ function openSite(id){
   editSiteId=id;
   const s=id?siteById(id):null;
   $('#siteTitle').textContent = s?'Edit site':'Add site';
-  $('#stName').value = s?s.name:''; $('#stState').value = s?(s.state||''):'';
+  $('#stName').value = s?s.name:'';
   $('#siteDel').style.display = s?'':'none';
   $('#dlgSite').showModal();
 }
@@ -572,11 +564,11 @@ $('#addSite').addEventListener('click',()=>openSite(null));
 $('#siteCancel').addEventListener('click',()=>$('#dlgSite').close());
 $('#siteSave').addEventListener('click',()=>{
   const name=trim($('#stName').value); if(!name) return toast('Enter a site name');
-  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.state=trim($('#stState').value); }
+  if(editSiteId){ siteById(editSiteId).name = name; }
   else{
     const id=slug(name);
     if(siteById(id)) return toast('A site with that name already exists');
-    CFG.sites.push({id,name,state:trim($('#stState').value),operators:[]});
+    CFG.sites.push({id, name, operators:[]});
   }
   $('#dlgSite').close(); renderAll(); toast('Saved');
 });
@@ -595,7 +587,7 @@ function openSup(id){
   editSupId=id;
   const s=id?CFG.supervisors.find(x=>x.id===id):null;
   $('#supTitle').textContent = s?'Edit supervisor':'Add supervisor';
-  $('#sName').value=s?s.name:''; $('#sState').value=s?(s.state||''):''; $('#sPhone').value=s?(s.phone||''):'';
+  $('#sName').value=s?s.name:''; $('#sPhone').value=s?(s.phone||''):'';
   pickSites = new Set(s?s.siteIds:[]);
   $('#sFilter').value='';
   $('#supDel').style.display = s?'':'none';
@@ -603,14 +595,14 @@ function openSup(id){
 }
 function drawPicker(){
   const q=norm($('#sFilter').value);
-  const list=CFG.sites.slice().sort((a,b)=>(a.state||'').localeCompare(b.state||'')||a.name.localeCompare(b.name))
-    .filter(s=>!q||norm(s.name).includes(q)||norm(s.state).includes(q));
+  const list=CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name))
+    .filter(s=>!q||norm(s.name).includes(q));
   $('#sSites').innerHTML = list.length ? list.map(s=>{
     const others=supsOfSite(s.id).filter(x=>x.id!==editSupId);
     return '<label class="'+(pickSites.has(s.id)?'on ':'')+(others.length?'taken':'')+'">'+
       '<input type="checkbox" value="'+s.id+'"'+(pickSites.has(s.id)?' checked':'')+'>'+
       '<span><b>'+esc(s.name)+'</b>'+
-      '<small>'+(s.state?esc(s.state)+' · ':'')+s.operators.length+' operators</small>'+
+      '<small>'+s.operators.length+' operators</small>'+
       (others.length?'<small class="by">also with '+others.map(o=>esc(o.name)).join(', ')+'</small>':'')+
       '</span></label>';
   }).join('') : '<div class="muted" style="padding:14px">No sites match.</div>';
@@ -631,7 +623,7 @@ $('#addSup').addEventListener('click',()=>openSup(null));
 $('#supCancel').addEventListener('click',()=>$('#dlgSup').close());
 $('#supSave').addEventListener('click',()=>{
   const name=trim($('#sName').value); if(!name) return toast('Enter a name');
-  const rec={ name, state:trim($('#sState').value), phone:trim($('#sPhone').value), siteIds:[...pickSites] };
+  const rec={ name, phone:trim($('#sPhone').value), siteIds:[...pickSites] };
   if(editSupId) Object.assign(CFG.supervisors.find(x=>x.id===editSupId), rec);
   else CFG.supervisors.push(Object.assign({id:uid()}, rec));
   $('#dlgSup').close(); renderAll(); toast('Saved');
@@ -662,12 +654,11 @@ function renderIssue(){
     const ops=s.siteIds.reduce((a,i)=>a+((siteById(i)||{operators:[]}).operators.length),0);
     const ready=s.siteIds.length>0;
     return '<tr><td><b>'+esc(s.name)+'</b>'+(s.phone?' <span class="muted">'+esc(s.phone)+'</span>':'')+'</td>'+
-      '<td>'+(s.state?esc(s.state):'<span class="muted">—</span>')+'</td>'+
       '<td class="num">'+s.siteIds.length+'</td><td class="num">'+ops+'</td>'+
       '<td class="muted" style="font-size:12.5px">'+esc(setupName(s))+'</td>'+
       '<td class="right"><button class="btn sm'+(ready?' pri':'')+'" data-issue="'+s.id+'"'+(ready?'':' disabled')+'>Download</button></td></tr>';
   }).join('');
-  el.innerHTML='<table><thead><tr><th>Supervisor</th><th>State</th><th class="right">Sites</th><th class="right">Operators</th><th>File</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.innerHTML='<table><thead><tr><th>Supervisor</th><th class="right">Sites</th><th class="right">Operators</th><th>File</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
   el.querySelectorAll('[data-issue]').forEach(b=>b.addEventListener('click',()=>{
     const s=CFG.supervisors.find(x=>x.id===b.dataset.issue);
     download(setupName(s), JSON.stringify(setupFor(s),null,1), 'application/json');
@@ -847,10 +838,10 @@ $('#apiPush').addEventListener('click', async ()=>{
   clog('<span class="dim">Uploading…</span>');
   try{
     const d = await apiCall({ action:'adminPush', k:CFG.key, std:CFG.std||30,
-      sites: CFG.sites.map(s=>({ id:s.id, name:s.name, state:s.state||'',
+      sites: CFG.sites.map(s=>({ id:s.id, name:s.name,
         operators: s.operators.map(o=>({ key:opKey(o), code:o.code||'', name:o.name||'',
           father:o.father||'', account:o.account||'', ifsc:o.ifsc||'' })) })),
-      supervisors: CFG.supervisors.map(s=>({ token:s.token, name:s.name, state:s.state||'',
+      supervisors: CFG.supervisors.map(s=>({ token:s.token, name:s.name,
         phone:s.phone||'', siteIds:s.siteIds })) });
     const out = ['<span class="ok">✓ Uploaded to the sheet</span>', '',
       '   sites        '+d.sites, '   operators    '+d.operators, '   supervisors  '+d.supervisors];
@@ -877,11 +868,15 @@ $('#linkBase').addEventListener('click', ()=>{
 });
 $('#linkCsv').addEventListener('click', ()=>{
   ensureTokens();
-  const rows = [['SUPERVISOR','STATE','PHONE','SITES','LINK']].concat(
-    CFG.supervisors.map(s=>[s.name, s.state||'', s.phone||'',
-      s.siteIds.map(i=>(siteById(i)||{name:'?'}).name).join(' + '), supLink(s)]));
-  download('SUPERVISOR_LINKS.csv',
-    rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n'), 'text/csv');
+  if(!appBase()) return toast('Set the app address first, or the links will be blank');
+  const list = CFG.supervisors.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const rows = [['S.NO','SUPERVISOR NAME','PERSONAL LINK','SITE NAME']];
+  list.forEach((s,i)=>rows.push([ i+1, s.name, {v:supLink(s)},
+    s.siteIds.map(x=>(siteById(x)||{name:'?'}).name).join(', ') ]));
+  download('SUPERVISOR_LINKS.xlsx',
+    buildXlsx([{ name:'SUPERVISOR LINKS', rows, widths:[7,22,64,50] }]),
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(list.length+' links exported to Excel');
 });
 
 function waMessage(s){
@@ -922,8 +917,7 @@ function renderLinks(){
 /* ------------------------------------ import supervisors from Excel */
 const SUP_HEAD = {
   name:  ['SUPERVISORNAME','NAME','SUPERVISOR','INCHARGE','MANAGER'],
-  phone: ['PHONE','PHONENO','PHONENUMBER','MOBILE','MOBILENO','CONTACT','CONTACTNO'],
-  state: ['STATE','REGION','ZONE','LOCATION']
+  phone: ['PHONE','PHONENO','PHONENUMBER','MOBILE','MOBILENO','CONTACT','CONTACTNO']
 };
 const isSiteHead = h => /^SITES?\d*$/.test(h) || /^SITENAMES?\d*$/.test(h) || /^SITEALLOTTED\d*$/.test(h);
 
@@ -977,10 +971,9 @@ $('#supImport').addEventListener('click', async ()=>{
         });
         if(!ids.length && !wanted.length){ skipped++; line('warn','! '+name+' — no sites listed, skipped'); continue; }
 
-        const rec = { name, state: trim(map.state!==undefined?r[map.state]:''),
-                      phone: trim(map.phone!==undefined?r[map.phone]:''), siteIds: ids };
+        const rec = { name, phone: trim(map.phone!==undefined?r[map.phone]:''), siteIds: ids };
         const ex = CFG.supervisors.find(x=>norm(x.name)===norm(name));
-        if(ex){ ex.state=rec.state||ex.state; ex.phone=rec.phone||ex.phone; ex.siteIds=ids; updated++; }
+        if(ex){ ex.phone=rec.phone||ex.phone; ex.siteIds=ids; updated++; }
         else { CFG.supervisors.push(Object.assign({id:uid(), token:randomToken(10)}, rec)); added++; }
         seen.add(norm(name));
       }
@@ -1031,11 +1024,11 @@ $('#apiPull').addEventListener('click', async ()=>{
   try{
     const d = await apiCall({action:'adminConfig', k:CFG.key});
     CFG.std = d.std || 30;
-    CFG.sites = (d.sites||[]).map(s=>({ id:s.id, name:s.name, state:s.state||'',
+    CFG.sites = (d.sites||[]).map(s=>({ id:s.id, name:s.name,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // supervisors come back keyed by token; give each one a local id again
     CFG.supervisors = (d.supervisors||[]).map(s=>({
-      id:uid(), token:s.token, name:s.name, state:s.state||'', phone:s.phone||'', siteIds:s.siteIds||[] }));
+      id:uid(), token:s.token, name:s.name, phone:s.phone||'', siteIds:s.siteIds||[] }));
     saveCfg(); renderAll();
     const ops = CFG.sites.reduce((a,s)=>a+s.operators.length,0);
     const out = ['<span class="ok">✓ Loaded from the sheet</span>','',
