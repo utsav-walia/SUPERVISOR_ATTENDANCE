@@ -5,19 +5,36 @@
  *   2. Never touch anything that isn't ours (Google Sheets calls go straight out).
  *   3. Never cache admin.html — the console is a desk tool and must always be fresh.
  *   4. A failure anywhere falls through to the network, never to a blank screen.
+ *   5. Cache under the address WITHOUT its query string. Supervisors always
+ *      arrive at ./?s=TOKEN; if the refreshed copy is filed under the token while
+ *      lookups keep matching the plain ./ entry, the phone serves the install-time
+ *      app for ever and no fix ever reaches it. This bit is load-bearing.
  */
-const CACHE = 'attendance-crm-v3';
+const CACHE = 'attendance-crm-v4';
 const ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'
 ];
+
+/** The cache key for a request: same address, query and hash stripped. */
+function keyFor(input) {
+  const u = new URL(typeof input === 'string' ? input : input.url, self.location.href);
+  u.search = '';
+  u.hash = '';
+  return u.href;
+}
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const c = await caches.open(CACHE);
     // one at a time: a single missing file must not abort the whole install,
     // which would leave an empty cache and a broken app
-    await Promise.all(ASSETS.map(u => c.add(u).catch(() => {})));
+    await Promise.all(ASSETS.map(async u => {
+      try {
+        const r = await fetch(u, { cache: 'reload' });
+        if (r && r.ok) await c.put(keyFor(u), r);
+      } catch (err) { /* offline during install; the network path will cope */ }
+    }));
     await self.skipWaiting();
   })());
 });
@@ -42,13 +59,15 @@ self.addEventListener('fetch', e => {
   // the head-office console must never be served from cache
   if (url.pathname.indexOf('admin.html') > -1) return;
 
+  const key = keyFor(req);
+
   e.respondWith((async () => {
-    // 1. cached copy, refreshed quietly in the background
+    // 1. cached copy, refreshed quietly in the background under the same key
     try {
-      const hit = await caches.match(req, { ignoreSearch: true });
+      const hit = await caches.match(key);
       if (hit) {
         fetch(req).then(r => {
-          if (r && r.ok) caches.open(CACHE).then(c => c.put(req, r.clone())).catch(() => {});
+          if (r && r.ok) caches.open(CACHE).then(c => c.put(key, r.clone())).catch(() => {});
         }).catch(() => {});
         return hit;
       }
@@ -59,14 +78,14 @@ self.addEventListener('fetch', e => {
       const fresh = await fetch(req);
       if (fresh && fresh.ok) {
         const copy = fresh.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        caches.open(CACHE).then(c => c.put(key, copy)).catch(() => {});
       }
       return fresh;
     } catch (err) { /* offline */ }
 
     // 3. offline and never seen this page — serve the app shell if we have it
     try {
-      const shell = await caches.match('./index.html');
+      const shell = await caches.match(keyFor('./index.html'));
       if (shell) return shell;
     } catch (err) { /* nothing cached at all */ }
 
