@@ -106,6 +106,9 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <p class="hint">Pick your master <b>.xlsx</b> — the one with a sheet per site. Each sheet becomes a site;
       the CODE NO. / NAME / FATHER NAME / ACCOUNT NUMBER / IFSC CODE columns are read automatically.
       Loading it again later updates operators by code and keeps everything else.</p>
+    <p class="hint" style="margin:-6px 0 14px"><b>Opening this console on another computer or browser?</b>
+      You don't need any files — go to the <b>☁ Cloud &amp; links</b> tab, enter the Web app URL and admin key,
+      and press <b>Load everything from the sheet</b>.</p>
     <div class="bar">
       <input type="file" id="masterFile" accept=".xlsx,.xlsm" style="width:auto">
       <button class="btn pri" id="masterRun">Load master file</button>
@@ -219,11 +222,14 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     </div>
     <div class="bar">
       <button class="btn" id="apiTest">Test connection</button>
-      <button class="btn pri" id="apiPush">Upload everything to the sheet</button>
+      <button class="btn pri" id="apiPull">⇩ Load everything from the sheet</button>
+      <button class="btn" id="apiPush">⇧ Upload everything to the sheet</button>
       <span class="grow"></span>
       <button class="btn" id="cfgJs">Download config.js</button>
     </div>
     <p class="hint" style="margin:12px 0 0">
+      <b>Load</b> pulls the master list down from the sheet — use it on a new computer or browser.
+      <b>Upload</b> pushes what is on this screen up to the sheet, replacing what is there.<br><br>
       <b>config.js</b> is the one file the app needs in order to find your sheet. Download it and upload it to
       your repo (or Netlify) alongside index.html. Without it the app stays in offline setup-file mode.</p>
   </div>
@@ -234,7 +240,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <button class="btn" id="linkBase">Set app address</button>
       <button class="btn" id="linkCsv">Download all as CSV</button>
     </div>
-    <p class="hint">Each link is that man\'s key. Send it to him and to nobody else \u2014 whoever holds it can see
+    <p class="hint">Each link is that man's key. Send it to him and to nobody else — whoever holds it can see
       those sites. If a phone is lost, press <b>New link</b> to make his old one stop working, then upload again.</p>
     <div id="linkTable"></div>
   </div>
@@ -808,7 +814,7 @@ function randomToken(n){
   for(let i=0;i<n;i++) s+=c[a[i]%c.length];
   return s;
 }
-const appBase = () => (CFG.base||'').replace(/[?#].*$/,'').replace(/index\.html$/,'').replace(/\/?$/,'/');
+const appBase = () => { const b=(CFG.base||'').trim(); return b ? b.replace(/[?#].*$/,'').replace(/index\.html$/,'').replace(/\/?$/,'/') : ''; };
 const supLink = s => appBase() ? appBase()+'?s='+s.token : '(set the app address first)';
 
 async function apiCall(body){
@@ -1014,6 +1020,31 @@ $('#supImport').addEventListener('click', async ()=>{
     $('#supLog').innerHTML = '<span class="bad">✗ '+esc(err.message)+'</span>';
     toast('Import failed: '+err.message, 4500);
   }
+});
+
+$('#apiPull').addEventListener('click', async ()=>{
+  CFG.api=trim($('#apiUrl').value); CFG.key=trim($('#apiKey').value); saveCfg();
+  if(!CFG.api||!CFG.key) return toast('Enter the Web app URL and admin key first');
+  if(CFG.sites.length && !confirm('Replace what is on this screen with the sheet?\n\n'+
+      'Anything here that has not been uploaded will be lost.')) return;
+  clog('<span class="dim">Loading from the sheet…</span>');
+  try{
+    const d = await apiCall({action:'adminConfig', k:CFG.key});
+    CFG.std = d.std || 30;
+    CFG.sites = (d.sites||[]).map(s=>({ id:s.id, name:s.name, state:s.state||'',
+      operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
+    // supervisors come back keyed by token; give each one a local id again
+    CFG.supervisors = (d.supervisors||[]).map(s=>({
+      id:uid(), token:s.token, name:s.name, state:s.state||'', phone:s.phone||'', siteIds:s.siteIds||[] }));
+    saveCfg(); renderAll();
+    const ops = CFG.sites.reduce((a,s)=>a+s.operators.length,0);
+    const out = ['<span class="ok">✓ Loaded from the sheet</span>','',
+      '   sites        '+CFG.sites.length,
+      '   operators    '+ops,
+      '   supervisors  '+CFG.supervisors.length];
+    if(!CFG.base) out.push('', '<span class="warn">Set the app address below to rebuild the links.</span>');
+    clog(out); toast('Loaded '+CFG.sites.length+' sites from the sheet');
+  }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Load failed: '+err.message, 4500); }
 });
 
 renderAll();
