@@ -116,6 +116,19 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <button class="btn" id="addSite">Add site by hand</button>
     </div>
   </div>
+
+  <div class="panel" id="rejPanel" style="display:none;border-color:#e5b4b0">
+    <div class="bar" style="margin-bottom:10px">
+      <h2 style="margin:0;color:#b3261e">File rejected — nothing was loaded</h2><span class="grow"></span>
+      <span class="muted" id="rejCount"></span>
+      <button class="btn" id="rejDl">Download the list</button>
+    </div>
+    <p class="hint">Every operator must have an EMP Code, and no two operators anywhere may share one.
+      These rows break that, so the whole file was refused and your existing list is untouched.
+      Correct these rows in the master Excel and load it again.</p>
+    <div id="rejTable"></div>
+  </div>
+
   <div class="panel">
     <div class="bar" style="margin-bottom:10px">
       <h2 style="margin:0">Sites</h2><span class="grow"></span>
@@ -528,36 +541,118 @@ function renderSups(){
 }
 $('#supQ').addEventListener('input', renderSups);
 
+/* ---------------------------------------- rows the two code rules refused */
+let rejects = [];
+function renderRejects(){
+  const panel=$('#rejPanel');
+  if(!rejects.length){ panel.style.display='none'; return; }
+  panel.style.display='';
+  const noCode = rejects.filter(r=>!r.code).length;
+  $('#rejCount').textContent = rejects.length+' bad row(s) · '+noCode+' with no code · '+
+                               (rejects.length-noCode)+' duplicate code';
+  const rows = rejects.map(r=>
+    '<tr><td>'+esc(r.site)+'</td><td class="num">'+r.row+'</td>'+
+    '<td>'+(r.code?'<b>'+esc(r.code)+'</b>':'<span class="tag none">blank</span>')+'</td>'+
+    '<td><b>'+esc(r.name||'(no name)')+'</b></td>'+
+    '<td>'+esc(r.father||'')+'</td>'+
+    '<td style="color:#b3261e">'+esc(r.why)+'</td></tr>').join('');
+  $('#rejTable').innerHTML='<table><thead><tr><th>Site</th><th class="right">Row</th><th>Code</th>'+
+    '<th>Name</th><th>Father name</th><th>What is wrong</th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+$('#rejDl').addEventListener('click', ()=>{
+  if(!rejects.length) return;
+  const rows=[['SITE','ROW IN SHEET','CODE NO.','NAME','FATHER NAME','ACCOUNT NUMBER','IFSC CODE','WHAT IS WRONG']];
+  rejects.forEach(r=>rows.push([r.site,r.row,{v:r.code},r.name,r.father,{v:r.account},{v:r.ifsc},r.why]));
+  download('REFUSED_OPERATORS.xlsx',
+    buildXlsx([{name:'REFUSED', rows, widths:[24,13,14,26,26,22,15,52]}]),
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast(rejects.length+' refused rows exported');
+});
+
 /* ------------------------------------------------------- 1. master xlsx */
 $('#masterRun').addEventListener('click', async ()=>{
   const f=$('#masterFile').files[0]; if(!f) return toast('Choose your master .xlsx first');
   try{
     const sheets=await parseXlsx(await f.arrayBuffer());
-    let nSites=0,nOps=0,nUpd=0,skipped=[];
+
+    /* ---- pass one: read the whole file and judge it. Nothing is written to
+       CFG here. Two rules, and either one condemns the file:
+         1. every operator must have an EMP Code
+         2. an EMP Code may belong to only one man, anywhere in the company
+       A half-applied import would be worse than no import, so the file is only
+       touched once it is known to be clean. */
+    rejects = [];
+    const skipped=[], parsed=[];
+    const owner = new Map();                 // CODE -> {site, name} already in the console
+    CFG.sites.forEach(s => s.operators.forEach(o => {
+      if(o.code) owner.set(o.code, {site:s.name, name:o.name, id:s.id});
+    }));
+    const inFile = new Map();                // CODE -> {site, name} seen in this file
+
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
-      const id=slug(sh.name), clean=cleanSiteName(sh.name);
-      let site=CFG.sites.find(s=>s.id===id);
-      if(!site){ site={id, name:clean, operators:[]}; CFG.sites.push(site); nSites++; }
-      else site.name = clean;
-      const used=new Set(site.operators.map(opKey));
+      const id=slug(sh.name), clean=cleanSiteName(sh.name), recs=[];
       for(let i=h.i+1;i<sh.rows.length;i++){
         const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
         const code=trim(g('code')).toUpperCase(), name=trim(g('name'));
         if(!code && !name) continue;
         if(JUNK_CODE.test(norm(code))) continue;
-        const ex = code ? site.operators.find(o=>o.code===code)
-                        : site.operators.find(o=>!o.code && norm(o.name)===norm(name));
-        const rec={ key: ex?opKey(ex):makeKey(code,name,used), code, name,
-                    father:trim(g('father')), account:trim(g('account')), ifsc:trim(g('ifsc')).toUpperCase()};
-        if(ex){ ex.name=rec.name||ex.name; ex.father=rec.father||ex.father; ex.account=rec.account||ex.account; ex.ifsc=rec.ifsc||ex.ifsc; if(!ex.key) ex.key=rec.key; nUpd++; }
-        else { site.operators.push(rec); nOps++; }
+        const father=trim(g('father')), account=trim(g('account')), ifsc=trim(g('ifsc')).toUpperCase();
+        const row={site:clean, siteId:id, row:i+1, code, name, father, account, ifsc};
+
+        if(!code){ rejects.push(Object.assign({}, row, {why:'No EMP Code'})); continue; }
+
+        const twice = inFile.get(code);
+        const held  = owner.get(code);
+        if(twice){
+          rejects.push(Object.assign({}, row,
+            {why:'EMP Code repeated — also on '+twice.name+' at '+twice.site+' in this file'}));
+          continue;
+        }
+        // the same code on the same site is that man being updated, not a clash
+        if(held && held.id !== id){
+          rejects.push(Object.assign({}, row,
+            {why:'EMP Code already belongs to '+held.name+' at '+held.site}));
+          continue;
+        }
+        inFile.set(code, {site:clean, name});
+        recs.push(row);
       }
-      site.operators.sort((a,b)=> (a.code?0:1)-(b.code?0:1) ||
-        (a.code||a.name||'').localeCompare(b.code||b.name||'',undefined,{numeric:true}));
+      parsed.push({id, clean, recs});
+    }
+
+    /* ---- the verdict */
+    if(rejects.length){
+      renderRejects();
+      try{ $('#rejPanel').scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
+      const noCode = rejects.filter(r=>!r.code).length;
+      toast('FILE REJECTED — nothing was loaded. '+rejects.length+' bad row(s): '+
+            noCode+' with no EMP Code, '+(rejects.length-noCode)+' duplicate code(s).', 7000);
+      return;
+    }
+
+    /* ---- pass two: the file is clean, so apply it */
+    let nSites=0,nOps=0,nUpd=0;
+    for(const {id, clean, recs} of parsed){
+      let site=CFG.sites.find(s=>s.id===id);
+      if(!site){ site={id, name:clean, operators:[]}; CFG.sites.push(site); nSites++; }
+      else site.name = clean;
+      const used=new Set(site.operators.map(opKey));
+      for(const rec of recs){
+        const ex = site.operators.find(o=>o.code===rec.code);
+        if(ex){ ex.name=rec.name||ex.name; ex.father=rec.father||ex.father;
+                ex.account=rec.account||ex.account; ex.ifsc=rec.ifsc||ex.ifsc;
+                if(!ex.key) ex.key=rec.code; nUpd++; }
+        else { site.operators.push({ key: makeKey(rec.code, rec.name, used), code:rec.code,
+                 name:rec.name, father:rec.father, account:rec.account, ifsc:rec.ifsc }); nOps++; }
+      }
+      site.operators.sort((a,b)=>
+        (a.code||'').localeCompare(b.code||'',undefined,{numeric:true}));
     }
     renderAll();
-    toast(nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated'+(skipped.length?' · skipped '+skipped.join(', '):''), 5200);
+    renderRejects();
+    toast('Accepted — '+nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated'+
+          (skipped.length?' · skipped '+skipped.join(', '):''), 5600);
   }catch(err){ console.error(err); toast('Could not read the file: '+err.message, 5000); }
 });
 
