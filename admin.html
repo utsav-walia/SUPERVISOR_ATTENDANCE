@@ -113,6 +113,7 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <input type="file" id="masterFile" accept=".xlsx,.xlsm" style="width:auto">
       <button class="btn pri" id="masterRun">Load master file</button>
       <span class="grow"></span>
+      <button class="btn" id="purgeNoCode">Remove operators with no EMP Code</button>
       <button class="btn" id="addSite">Add site by hand</button>
     </div>
   </div>
@@ -666,6 +667,35 @@ function openSite(id){
   $('#siteDel').style.display = s?'':'none';
   $('#dlgSite').showModal();
 }
+/* Take out every operator with no EMP Code. They can never be marked or paid,
+   so they only clutter the supervisors' screens. A list is saved first — this
+   is people's bank details, and nothing here is recoverable from the sheet. */
+$('#purgeNoCode').addEventListener('click',()=>{
+  const doomed=[];
+  CFG.sites.forEach(s=>s.operators.forEach(o=>{
+    if(!o.code) doomed.push({site:s.name, name:o.name, father:o.father, account:o.account, ifsc:o.ifsc});
+  }));
+  if(!doomed.length) return toast('Every operator already has an EMP Code — nothing to remove');
+
+  const bySite={}; doomed.forEach(d=>bySite[d.site]=(bySite[d.site]||0)+1);
+  const worst=Object.entries(bySite).sort((a,b)=>b[1]-a[1]).slice(0,6)
+    .map(([s,n])=>'   '+s+'  '+n).join('\n');
+  if(!confirm('Remove '+doomed.length+' operator(s) with no EMP Code?\n\n'+worst+
+      (Object.keys(bySite).length>6 ? '\n   …and '+(Object.keys(bySite).length-6)+' more sites' : '')+
+      '\n\nA list of them is saved to your computer first.\n'+
+      'They disappear from the sheet only after you press Upload on the Cloud tab.')) return;
+
+  const rows=[['SITE','NAME','FATHER NAME','ACCOUNT NUMBER','IFSC CODE']];
+  doomed.forEach(d=>rows.push([d.site, d.name, d.father, {v:d.account}, {v:d.ifsc}]));
+  download('REMOVED_NO_CODE.xlsx',
+    buildXlsx([{name:'REMOVED', rows, widths:[24,26,26,22,15]}]),
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+  CFG.sites.forEach(s=>{ s.operators = s.operators.filter(o=>o.code); });
+  saveCfg(); renderAll();
+  toast(doomed.length+' removed · list saved as REMOVED_NO_CODE.xlsx · now press ⇧ Upload on the Cloud tab', 7000);
+});
+
 $('#addSite').addEventListener('click',()=>openSite(null));
 $('#siteCancel').addEventListener('click',()=>$('#dlgSite').close());
 $('#siteSave').addEventListener('click',()=>{
