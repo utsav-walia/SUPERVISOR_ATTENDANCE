@@ -566,24 +566,22 @@ function prune(k){
 function curSite(){ return DB.sites.find(s=>s.id===DB.ui.site) || DB.sites[0] || null; }
 function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); }
 
-/* ---- automatic OT / AB ------------------------------------------------
-   WD is the only thing anybody types. Standard month = 30 days by default
-   (changeable in the menu).
-     WD <  standard  ->  AB = standard - WD,  OT blank
-     WD >  standard  ->  OT = WD - standard,  AB blank
-     WD == standard  ->  both blank
-   OT and AB are always recomputed from WD — they can never be edited. */
+/* ---- WD and OT are typed, AB is worked out -----------------------------
+   Standard month = 30 days by default (changeable in the menu).
+     AB = standard - WD   when WD is below the standard
+     AB is blank          when WD equals the standard
+   WD can never exceed the standard — extra days belong in OT, and letting a
+   day count as both worked and overtime is how payroll goes wrong. OT is
+   whatever the supervisor typed and is never touched. */
 function stdDays(){ const v = +(DB.settings && DB.settings.std); return v>0 ? v : 30; }
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
-  const std = stdDays(), wd = e.wd;
-  delete e.otM; delete e.abM;                       // legacy flags — no manual values any more
-  if(wd==null){ delete e.ab; delete e.ot; }
-  else {
-    if(wd < std){ e.ab = std - wd; delete e.ot; }
-    else if(wd > std){ e.ot = wd - std; delete e.ab; }
-    else { delete e.ab; delete e.ot; }
-  }
+  const std = stdDays();
+  delete e.otM; delete e.abM;                       // legacy flags — no manual AB any more
+  if(e.wd != null && e.wd > std) e.wd = std;        // hard ceiling
+  if(e.wd == null) delete e.ab;
+  else if(e.wd < std) e.ab = std - e.wd;
+  else delete e.ab;
   prune(k); save();
   return DB.entries[k] || {};
 }
@@ -691,10 +689,11 @@ function render(){
 }
 /* WD is the only editable field. OT and AB are read-only result boxes. */
 function fld(e){
+  const std = stdDays();
   return '<div class="inp wd"><label>WD</label>'+
-      '<input type="number" inputmode="numeric" min="0" max="999" step="1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
-    '<div class="inp ot"><label>OT <i>auto</i></label>'+
-      '<div class="out'+(e.ot==null?'':' set')+'" data-f="ot">'+(e.ot==null?'–':e.ot)+'</div></div>'+
+      '<input type="number" inputmode="numeric" min="0" max="'+std+'" step="1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
+    '<div class="inp ot"><label>OT</label>'+
+      '<input type="number" inputmode="numeric" min="0" max="999" step="1" data-f="ot" placeholder="–" value="'+(e.ot==null?'':e.ot)+'"></div>'+
     '<div class="inp ab"><label>AB <i>auto</i></label>'+
       '<div class="out'+(e.ab==null?'':' set')+'" data-f="ab">'+(e.ab==null?'–':e.ab)+'</div></div>';
 }
@@ -705,24 +704,27 @@ $('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMo
 $('#q').addEventListener('input', render);
 
 $('#list').addEventListener('input', e=>{
-  const inp = e.target.closest('input[data-f="wd"]'); if(!inp) return;   // WD is the only input
+  const inp = e.target.closest('input[data-f="wd"], input[data-f="ot"]'); if(!inp) return;
+  const fieldName = inp.dataset.f;                        // WD and OT are both typed now
   const card = e.target.closest('.card'), code = card.dataset.key;
   const site = curSite().id, ym = curMonth();
 
+  // WD may not go past the standard month; overtime belongs in the OT box
+  const ceiling = fieldName === 'wd' ? stdDays() : 999;
   let v = inp.value.trim();
   if(v!==''){
-    const c = Math.max(0, Math.min(999, Math.round(+v || 0)));
+    const c = Math.max(0, Math.min(ceiling, Math.round(+v || 0)));
     if(String(c)!==v && isFinite(+v)) inp.value = c;      // reflect clamping back to the field
+    if(fieldName === 'wd' && c < Math.round(+v || 0))
+      toast('WD cannot be more than '+ceiling+'. Put the extra days in OT.', 3400);
     v = c;
   }
-  setEntry(site, ym, code, 'wd', v===''?'':v);
+  setEntry(site, ym, code, fieldName, v===''?'':v);
   const ent = derive(site, ym, code);
 
-  for(const g of ['ot','ab']){
-    const box = card.querySelector('.out[data-f="'+g+'"]');
-    box.textContent = ent[g]==null ? '–' : ent[g];
-    box.classList.toggle('set', ent[g]!=null);
-  }
+  const box = card.querySelector('.out[data-f="ab"]');
+  box.textContent = ent.ab==null ? '–' : ent.ab;
+  box.classList.toggle('set', ent.ab!=null);
   card.classList.toggle('done', ent.wd!=null);
   updateChips();
   queue(site, code);
@@ -996,6 +998,7 @@ async function cloudBootstrap(silent){
       if(DB.pending && DB.pending[site+'|'+key]) continue;      // local edit not yet sent — keep it
       const k = site+'|'+ym+'|'+key;
       DB.entries[k] = { wd: val.wd };
+      if(val.ot != null) DB.entries[k].ot = val.ot;             // OT is typed, so it comes back too
       derive(site, ym, key);
     }
     if(!keep.has(DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
@@ -1036,7 +1039,7 @@ async function flush(){
   const rows = keys.map(k=>{
     const [site, key] = k.split('|');
     const e = getEntry(site, ym, key);
-    return { site, key, wd: e.wd==null ? null : e.wd };
+    return { site, key, wd: e.wd==null ? null : e.wd, ot: e.ot==null ? null : e.ot };
   });
   try{
     const d = await apiPost({action:'save', s:DB.token, month:ym, rows});
