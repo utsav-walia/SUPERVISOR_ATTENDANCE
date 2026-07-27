@@ -73,7 +73,9 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 .code.nocode{background:#fdeceb;color:var(--bad)}
 .nm{font-weight:600;font-size:14.5px;line-height:1.25;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .editbtn{flex:0 0 auto;color:var(--muted);font-size:15px;padding:2px 4px}
-.meta{font-size:11.5px;color:var(--muted);margin:3px 0 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{font-size:11.5px;color:var(--muted);margin:3px 0 9px;line-height:1.5;overflow-wrap:anywhere}
+.meta i{font-style:normal;opacity:.45;margin:0 5px}
+.meta .acct{font-variant-numeric:tabular-nums;letter-spacing:.4px;color:var(--ink);font-weight:600}
 .inputs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
 .inp label{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;text-align:center;margin-bottom:3px}
 .inp.wd label{color:var(--wd)} .inp.ot label{color:var(--ot)} .inp.ab label{color:var(--ab)}
@@ -622,14 +624,19 @@ function render(){
     const has = e.wd!=null || e.ot!=null || e.ab!=null;
     if(has) filled++;
     tWd += (+e.wd||0); tOt += (+e.ot||0); tAb += (+e.ab||0);
-    if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) || norm(op.father).includes(q))) continue;
+    if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
+              norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
     shown++;
-    const meta = [op.father, op.account ? '•••'+String(op.account).slice(-4) : '', op.ifsc].filter(Boolean).join('  ·  ');
+    const bits = [];
+    if(op.father)  bits.push('<span>'+xmlEsc(op.father)+'</span>');
+    if(op.account) bits.push('<span class="acct">'+xmlEsc(String(op.account))+'</span>');
+    if(op.ifsc)    bits.push('<span>'+xmlEsc(op.ifsc)+'</span>');
+    const meta = bits.join('<i>·</i>');
     html += '<div class="card '+(has?'done':'')+'" data-key="'+xmlEsc(opKey(op))+'">'+
       '<div class="chead"><span class="code'+(op.code?'':' nocode')+'">'+xmlEsc(op.code||'NO CODE')+'</span>'+
       '<span class="nm">'+xmlEsc(op.name||'(no name)')+'</span>'+
       '<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button></div>'+
-      (meta?'<div class="meta">'+xmlEsc(meta)+'</div>':'<div class="meta">—</div>')+
+      '<div class="meta">'+(meta||'—')+'</div>'+
       '<div class="inputs">'+ fld(e) +'</div></div>';
   }
   $('#chips').innerHTML =

@@ -236,6 +236,17 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
 
   <div class="panel">
     <div class="bar" style="margin-bottom:10px">
+      <h2 style="margin:0">This month's attendance</h2><span class="grow"></span>
+      <input type="month" id="dlMonth" style="max-width:170px">
+      <button class="btn pri" id="dlMonthGo">⇩ Download attendance</button>
+    </div>
+    <p class="hint">Pulls straight from the sheet — no files from anyone. You get one workbook, a sheet per site,
+      in your usual column order, plus a <b>SUMMARY</b> sheet showing who has finished and who has not.</p>
+    <div class="log" id="dlLog" style="display:none"></div>
+  </div>
+
+  <div class="panel">
+    <div class="bar" style="margin-bottom:10px">
       <h2 style="margin:0">Supervisor links</h2><span class="grow"></span>
       <button class="btn" id="linkBase">Set app address</button>
       <button class="btn" id="linkCsv">Download all as Excel</button>
@@ -1038,6 +1049,89 @@ $('#apiPull').addEventListener('click', async ()=>{
     if(!CFG.base) out.push('', '<span class="warn">Set the app address below to rebuild the links.</span>');
     clog(out); toast('Loaded '+CFG.sites.length+' sites from the sheet');
   }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Load failed: '+err.message, 4500); }
+});
+
+/* ---------- download one month's attendance straight from the sheet ---------- */
+{
+  const d=new Date();
+  $('#dlMonth').value = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+$('#dlMonthGo').addEventListener('click', async ()=>{
+  CFG.api=trim($('#apiUrl').value)||CFG.api; CFG.key=trim($('#apiKey').value)||CFG.key; saveCfg();
+  if(!CFG.api||!CFG.key) return toast('Enter the Web app URL and admin key first');
+  const month = trim($('#dlMonth').value);
+  if(!/^\d{4}-\d{2}$/.test(month)) return toast('Pick a month first');
+  if(!CFG.sites.length) return toast('Load the master list first (⇩ above)');
+
+  const box=$('#dlLog'); box.style.display='block';
+  box.innerHTML='<span class="dim">Reading '+cesc(month)+' from the sheet…</span>';
+  try{
+    const d = await apiCall({action:'adminPull', k:CFG.key, month});
+    const got = new Map();                       // siteId -> Map(op_key -> row)
+    (d.rows||[]).forEach(r=>{
+      if(!got.has(r.site)) got.set(r.site, new Map());
+      got.get(r.site).set(String(r.key), r);
+    });
+
+    const MONTHS=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
+                  'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+    const label = MONTHS[+month.slice(5,7)-1]+'_'+month.slice(0,4);
+    const widths=[11,26,26,7,7,7,22,15];
+    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD','TOTAL OT','TOTAL AB','STATUS']];
+    let grandFilled=0, grandOps=0;
+
+    CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(site=>{
+      const have = got.get(site.id) || new Map();
+      const rows=[COLS.slice()];
+      let filled=0, tWd=0, tOt=0, tAb=0;
+      site.operators.forEach(op=>{
+        const r = have.get(String(opKey(op)));
+        const wd = r && r.wd!=null ? r.wd : null;
+        const ot = r && r.ot!=null ? r.ot : null;
+        const ab = r && r.ab!=null ? r.ab : null;
+        if(wd!=null){ filled++; tWd+=wd; tOt+=ot||0; tAb+=ab||0; }
+        rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, ot, ab,
+                   {v:op.account||''}, {v:op.ifsc||''}]);
+      });
+      // anyone in the sheet this site does not have in the master list
+      const known=new Set(site.operators.map(o=>String(opKey(o))));
+      have.forEach((r,k)=>{ if(known.has(k)) return;
+        if(r.wd!=null){ filled++; tWd+=r.wd; tOt+=r.ot||0; tAb+=r.ab||0; }
+        rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, r.ot, r.ab,
+                   {v:r.account||''}, {v:r.ifsc||''}]); });
+
+      const total=rows.length-1;
+      grandFilled+=filled; grandOps+=total;
+      sheets.push({name:site.name, rows, widths});
+      summary.push([site.name, supsOfSite(site.id).map(x=>x.name).join(', ')||'—',
+                    total, filled, total-filled, tWd, tOt, tAb,
+                    filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE')]);
+    });
+
+    summary.push([]);
+    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','']);
+    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,10,10,13]});
+
+    download('ATTENDANCE_'+label+'.xlsx', buildXlsx(sheets),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    const notStarted = summary.slice(1,-2).filter(r=>r[8]==='NOT STARTED');
+    const part       = summary.slice(1,-2).filter(r=>r[8]==='PART DONE');
+    const out=['<span class="ok">✓ '+cesc(label.replace('_',' '))+' downloaded</span>','',
+      '   sites        '+CFG.sites.length,
+      '   operators    '+grandOps,
+      '   filled in    '+grandFilled+'  ('+Math.round(grandFilled/(grandOps||1)*100)+'%)'];
+    if(part.length){ out.push('', '<span class="warn">Part done ('+part.length+'):</span>');
+      part.forEach(r=>out.push('<span class="warn">   • '+cesc(r[0])+'  '+r[3]+'/'+r[2]+'  → '+cesc(r[1])+'</span>')); }
+    if(notStarted.length){ out.push('', '<span class="bad">Not started ('+notStarted.length+'):</span>');
+      notStarted.forEach(r=>out.push('<span class="bad">   • '+cesc(r[0])+'  → '+cesc(r[1])+'</span>')); }
+    if(!part.length && !notStarted.length) out.push('', '<span class="ok">Every site is complete.</span>');
+    box.innerHTML=out.join('\n');
+    toast(grandFilled+' of '+grandOps+' operators filled in');
+  }catch(err){
+    box.innerHTML='<span class="bad">✗ '+cesc(err.message)+'</span>';
+    toast('Download failed: '+err.message, 4500);
+  }
 });
 
 renderAll();
