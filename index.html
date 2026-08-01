@@ -560,7 +560,29 @@ function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); 
    WD can never exceed the month — extra days belong in OT, and letting a
    day count as both worked and overtime is how payroll goes wrong. OT is
    whatever the supervisor typed and is never touched. */
-function stdDays(ym){
+/* Sites that pay on a fixed 26-day month whatever the calendar says. Matched
+   on the site name with punctuation and spacing ignored, so "NOIDA N1 & N2"
+   and "NOIDA N1 N2" are the same site. A site not on this list uses the real
+   length of the month. */
+const FIXED26_NAMES = [
+  'SINGLER', 'AGGARWAL GUJRAT', 'AGGARWAL RAJ', 'ASAHI BHILWARA',
+  'ASAHI ROORKEE', 'ASAHI TALOJA', 'BAJPUR', 'CARRIER AIRCON',
+  'CAVENDISH JK TYRE', 'CMR HARIDWAR', 'EASTMAN', 'EMAMI BALASORE',
+  'IP ALL NIMRANA SANPALI AGRA VARANASI', 'KASHIPUR', 'LT FOOD', 'MANESAR',
+  'MERINO HALOL', 'MERINO HAPUR', 'MERINO HR', 'NEW HOLAND', 'NIHON',
+  'NOIDA N1 & N2', 'POLYPLEX KHATIMA', 'SAMSUNG 1', 'SAMSUNG 2', 'SUDAMA WOOD'
+];
+const FIXED26 = new Set(FIXED26_NAMES.map(norm));
+function isFixed26(siteId){
+  const st = DB.sites.find(x => x.id === siteId);
+  return !!(st && FIXED26.has(norm(st.name)));
+}
+/* The standard for one site in one month. 26-day sites are flat; everyone else
+   follows the calendar. Always pass the entry's own site — never assume the one
+   on screen, or a recalculation across the whole book will use the wrong basis. */
+function stdDays(ym, siteId){
+  const sid = siteId === undefined ? (curSite()||{}).id : siteId;
+  if(isFixed26(sid)) return 26;
   const m = /^\d{4}-\d{2}$/.test(ym||'') ? ym : curMonth();
   const p = m.split('-');
   const d = new Date(+p[0], +p[1], 0).getDate();   // day 0 of next month = last of this
@@ -568,7 +590,7 @@ function stdDays(ym){
 }
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
-  const std = stdDays(ym);
+  const std = stdDays(ym, siteId);
   delete e.otM; delete e.abM;                       // legacy flags — no manual AB any more
   if(e.wd != null && e.wd > std) e.wd = std;        // hard ceiling
   if(e.wd == null) delete e.ab;
@@ -674,7 +696,8 @@ function render(){
     '<span class="chip g">Total WD <b>'+tWd+'</b></span>'+
     '<span class="chip b">Total OT <b>'+tOt+'</b></span>'+
     '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
-    '<span class="chip">Standard month <b>'+std+'</b></span>';
+    '<span class="chip">'+(isFixed26((curSite()||{}).id) ? 'Fixed month' : 'Standard month')+
+      ' <b>'+std+'</b></span>';
 
   list.innerHTML = html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
     (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>';
@@ -1082,7 +1105,7 @@ $('#impRun').addEventListener('click', async ()=>{
         if(withEntries){
           const num = key => { const raw=g(key); if(raw===''||raw===null) return null;
                                const v=Math.round(Math.abs(+raw)); return isFinite(v)?v:null; };
-          const std = stdDays(ym);
+          const std = stdDays(ym, site.id);
           let wd = num('wd');
           if(wd==null){                       // no WD column filled — work it back from AB or OT
             const ab = num('ab'), ot = num('ot');
