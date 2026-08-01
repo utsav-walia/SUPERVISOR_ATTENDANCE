@@ -594,6 +594,20 @@ $('#masterRun').addEventListener('click', async ()=>{
     const skipped=[], parsed=[];
     const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
+    /* A sheet finds its site by id first — that is the frozen slug of whatever
+       the tab was called when the site was born. If no id matches we try the
+       visible name, so a site that has since been renamed is still recognised
+       and updated instead of being duplicated. Only when neither matches is a
+       genuinely new site created. */
+    const resolveSiteId = nm => {
+      const raw = slug(nm), clean = norm(cleanSiteName(nm));
+      const byId = CFG.sites.find(s => s.id === raw);
+      if(byId) return byId.id;
+      const byName = CFG.sites.find(s => norm(s.name) === clean);
+      if(byName) return byName.id;
+      return raw;
+    };
+
     /* Pre-scan: which existing records this file is about to rewrite, and with
        what account. A man given a corrected EMP Code takes his bank account with
        him, so the account still filed under his old code must not be held
@@ -603,7 +617,7 @@ $('#masterRun').addEventListener('click', async ()=>{
     const incomingAcct = new Map();          // SITEID|CODE -> account in this file
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h) continue;
-      const id=slug(sh.name);
+      const id=resolveSiteId(sh.name);
       for(let i=h.i+1;i<sh.rows.length;i++){
         const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
         const c=trim(g('code')).toUpperCase();
@@ -627,7 +641,7 @@ $('#masterRun').addEventListener('click', async ()=>{
 
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
-      const id=slug(sh.name), clean=cleanSiteName(sh.name), recs=[];
+      const id=resolveSiteId(sh.name), clean=cleanSiteName(sh.name), recs=[];
       for(let i=h.i+1;i<sh.rows.length;i++){
         const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
         const code=trim(g('code')).toUpperCase(), name=trim(g('name'));
