@@ -183,9 +183,6 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <button class="btn pri" id="dlAll">Download all as ZIP</button>
       <button class="btn" id="dlEach">Download each separately</button>
       <span class="grow"></span>
-      <label class="muted" style="display:flex;gap:7px;align-items:center">Standard month
-        <input type="number" id="stdVal" min="1" max="31" style="width:74px">
-      </label>
     </div>
   </div>
   <div class="panel" style="padding:0;overflow:hidden"><div id="issueTable"></div></div>
@@ -306,6 +303,12 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <div class="f"><label>Site name</label><input type="text" id="stName" autocomplete="off"></div>
     <p class="muted" style="font-size:12.5px;margin:0">The site name becomes the sheet name in every export, so keep it
       exactly as you want it to appear in payroll.</p>
+    <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px">
+      <input type="checkbox" id="stFixed26" style="margin-top:3px">
+      <span><b>Pays a fixed 26-day month</b><br>
+      <span class="muted" style="font-size:12.5px">Absent is counted against 26 in every month, February included.
+      Untick and the site follows the calendar — 31, 30 or 28 days.</span></span>
+    </label>
   </div>
   <div class="foot">
     <button class="btn dgr" id="siteDel">Delete</button>
@@ -503,7 +506,6 @@ function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHdr(); r
 function renderHdr(){
   const ops=CFG.sites.reduce((a,s)=>a+s.operators.length,0);
   $('#hdrStat').textContent = CFG.sites.length+' sites · '+ops+' operators · '+CFG.supervisors.length+' supervisors';
-  $('#stdVal').value = CFG.std||30;
 }
 function renderSites(){
   const el=$('#siteTable');
@@ -515,9 +517,15 @@ function renderSites(){
       '<td class="num">'+s.operators.length+'</td>'+
       '<td>'+(sup.length?sup.map(x=>'<span class="tag">'+esc(x.name)+'</span>').join('')
                        :'<span class="tag none">unassigned</span>')+'</td>'+
+      '<td>'+(is26(s)?'<span class="tag">26-day</span>':'')+'</td>'+
       '<td class="right"><button class="btn sm" data-site="'+s.id+'">Edit</button></td></tr>';
   }).join('');
-  el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th><th>Supervisor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+  el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th><th>Supervisor</th><th>Month</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    (unmatched26().length
+      ? '<p class="hint" style="color:#b3261e;padding:10px 2px 0">'+unmatched26().length+
+        ' of the 26-day site names match no site here, so they are following the calendar: <b>'+
+        unmatched26().map(esc).join(' · ')+'</b>. Open the site and tick the box, or correct the name.</p>'
+      : '');
   el.querySelectorAll('[data-site]').forEach(b=>b.addEventListener('click',()=>openSite(b.dataset.site)));
 }
 function renderSups(){
@@ -734,6 +742,39 @@ $('#masterRun').addEventListener('click', async ()=>{
   }catch(err){ console.error(err); toast('Could not read the file: '+err.message, 5000); }
 });
 
+/* ---------------------------------------------------- 26-day duty sites
+   These sites pay a flat 26-day month. The list below is head office's
+   original one and acts as the default, so a site answers correctly even
+   before anyone touches it — and again after 'Load everything from the
+   sheet', which rebuilds the site records and would otherwise lose the
+   setting. CFG.fx26 holds only the sites you have explicitly ticked or
+   unticked by hand; those decisions win and survive any reload. */
+const FIXED26_NAMES = [
+  'SINGLER', 'AGGARWAL GUJRAT', 'AGGARWAL RAJ', 'ASAHI BHILWARA',
+  'ASAHI ROORKEE', 'ASAHI TALOJA', 'BAJPUR', 'CARRIER AIRCON',
+  'CAVENDISH JK TYRE', 'CMR HARIDWAR', 'EASTMAN', 'EMAMI BALASORE',
+  'IP ALL NIMRANA SANPALI AGRA VARANASI', 'KASHIPUR', 'LT FOOD', 'MANESAR',
+  'MERINO HALOL', 'MERINO HAPUR', 'MERINO HR', 'NEW HOLAND', 'NIHON',
+  'NOIDA N1 & N2', 'POLYPLEX KHATIMA', 'SAMSUNG 1', 'SAMSUNG 2', 'SUDAMA WOOD'
+];
+const FIXED26 = new Set(FIXED26_NAMES.map(norm));
+function is26(site){
+  if(!site) return false;
+  const fx = CFG.fx26 || {};
+  if(Object.prototype.hasOwnProperty.call(fx, site.id)) return !!fx[site.id];
+  return FIXED26.has(norm(site.name));
+}
+function set26(siteId, on){
+  CFG.fx26 = CFG.fx26 || {};
+  CFG.fx26[siteId] = !!on;
+}
+/* Which of head office's 26 names match no site at all. A silent mismatch
+   would quietly put a site back on calendar days, so it is shown, not hidden. */
+function unmatched26(){
+  const have = new Set(CFG.sites.map(x=>norm(x.name)));
+  return FIXED26_NAMES.filter(n => !have.has(norm(n)));
+}
+
 /* site dialog */
 let editSiteId=null;
 function openSite(id){
@@ -741,6 +782,7 @@ function openSite(id){
   const s=id?siteById(id):null;
   $('#siteTitle').textContent = s?'Edit site':'Add site';
   $('#stName').value = s?s.name:'';
+  $('#stFixed26').checked = s ? is26(s) : false;
   $('#siteDel').style.display = s?'':'none';
   $('#dlgSite').showModal();
 }
@@ -777,7 +819,8 @@ $('#addSite').addEventListener('click',()=>openSite(null));
 $('#siteCancel').addEventListener('click',()=>$('#dlgSite').close());
 $('#siteSave').addEventListener('click',()=>{
   const name=trim($('#stName').value); if(!name) return toast('Enter a site name');
-  if(editSiteId){ siteById(editSiteId).name = name; }
+  const want26 = $('#stFixed26').checked;
+  if(editSiteId){ siteById(editSiteId).name = name; set26(editSiteId, want26); }
   else{
     const id=slug(name);
     if(siteById(id)) return toast('A site with that name already exists');
@@ -851,12 +894,11 @@ $('#supDel').addEventListener('click',()=>{
 /* -------------------------------------------------- 3. setup files */
 function setupFor(sup){
   return {
-    type:'attendance-crm-setup', v:1,
+    type:'attendance-crm-setup', v:2,
     issued:new Date().toISOString().slice(0,10),
-    std:CFG.std||30,
     supervisor:{ id:sup.id, name:sup.name, state:sup.state||'', phone:sup.phone||'' },
     sites: sup.siteIds.map(i=>siteById(i)).filter(Boolean)
-      .map(s=>({ id:s.id, name:s.name, state:s.state||'', operators:s.operators }))
+      .map(s=>({ id:s.id, name:s.name, state:s.state||'', fixed26:is26(s), operators:s.operators }))
   };
 }
 const setupName = sup => 'SETUP_'+sup.name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'')+'.json';
@@ -877,8 +919,6 @@ function renderIssue(){
     download(setupName(s), JSON.stringify(setupFor(s),null,1), 'application/json');
   }));
 }
-$('#stdVal').addEventListener('change',e=>{ const v=Math.round(+e.target.value||0);
-  if(v>0&&v<=31){ CFG.std=v; saveCfg(); toast('Standard month set to '+v+' days'); } else e.target.value=CFG.std||30; });
 $('#dlAll').addEventListener('click',()=>{
   const ready=CFG.supervisors.filter(s=>s.siteIds.length);
   if(!ready.length) return toast('No supervisor has sites assigned yet');

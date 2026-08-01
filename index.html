@@ -575,7 +575,9 @@ const FIXED26_NAMES = [
 const FIXED26 = new Set(FIXED26_NAMES.map(norm));
 function isFixed26(siteId){
   const st = DB.sites.find(x => x.id === siteId);
-  return !!(st && FIXED26.has(norm(st.name)));
+  if(!st) return false;
+  if(st.fixed26 !== undefined) return !!st.fixed26;   // head office decided
+  return FIXED26.has(norm(st.name));                  // otherwise the known list
 }
 /* The standard for one site in one month. 26-day sites are flat; everyone else
    follows the calendar. Always pass the entry's own site — never assume the one
@@ -906,7 +908,7 @@ $('#setupRun').addEventListener('click', async ()=>{
         const have = new Set(ops.map(opKey));
         for(const o of ex.operators) if(!have.has(opKey(o))){ ops.push(o); kept++; }
       }
-      return { id:s.id, name:cleanSiteName(s.name), operators:ops };
+      return { id:s.id, name:cleanSiteName(s.name), fixed26:s.fixed26, operators:ops };
     });
     added = sites.reduce((a,s)=>a+s.operators.length,0);
 
@@ -918,7 +920,6 @@ $('#setupRun').addEventListener('click', async ()=>{
     DB.sites = sites;
     DB.supervisor = d.supervisor || null;
     DB.locked = true;
-    if(d.std) DB.settings = Object.assign({}, DB.settings, {std:d.std});
     if(!keepIds.has(DB.ui.site)) DB.ui.site = sites[0] ? sites[0].id : null;
     deriveAll(); save(); hide(); render();
 
@@ -985,10 +986,8 @@ async function cloudBootstrap(silent){
 
     DB.supervisor = d.supervisor || null;
     DB.locked = true;
-    if(d.std) DB.settings = Object.assign({}, DB.settings, {std:d.std});
-
     const keep = new Set(d.sites.map(s=>s.id));
-    DB.sites = d.sites.map(s=>({ id:s.id, name:cleanSiteName(s.name),
+    DB.sites = d.sites.map(s=>({ id:s.id, name:cleanSiteName(s.name), fixed26:s.fixed26,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // drop anything for sites he no longer holds
     for(const k of Object.keys(DB.entries)) if(!keep.has(k.split('|')[0])) delete DB.entries[k];
