@@ -594,12 +594,32 @@ $('#masterRun').addEventListener('click', async ()=>{
     const skipped=[], parsed=[];
     const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
+    /* Pre-scan: which existing records this file is about to rewrite, and with
+       what account. A man given a corrected EMP Code takes his bank account with
+       him, so the account still filed under his old code must not be held
+       against him. Only records the file actually supplies an account for are
+       set aside — if the sheet leaves the account blank the old one survives the
+       import, so it must keep guarding. */
+    const incomingAcct = new Map();          // SITEID|CODE -> account in this file
+    for(const sh of sheets){
+      const h=findHeader(sh.rows); if(!h) continue;
+      const id=slug(sh.name);
+      for(let i=h.i+1;i<sh.rows.length;i++){
+        const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
+        const c=trim(g('code')).toUpperCase();
+        if(c && !JUNK_CODE.test(norm(c))) incomingAcct.set(id+'|'+c, trim(g('account')));
+      }
+    }
+
     const owner     = new Map();   // CODE    -> {site, name, id} already in the console
     const acctOwner = new Map();   // ACCOUNT -> {site, name, code, id} already in the console
     CFG.sites.forEach(s => s.operators.forEach(o => {
       if(o.code) owner.set(o.code, {site:s.name, name:o.name, id:s.id});
       const a = trim(o.account);
-      if(a) acctOwner.set(a, {site:s.name, name:o.name, code:o.code, id:s.id});
+      if(!a) return;
+      const replacing = o.code && incomingAcct.get(s.id+'|'+o.code);
+      if(replacing) return;        // this record is being rewritten with a new account
+      acctOwner.set(a, {site:s.name, name:o.name, code:o.code, id:s.id});
     }));
 
     const inFile     = new Map();  // CODE    -> {site, name} seen in this file
