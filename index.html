@@ -191,7 +191,6 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     <a href="#" data-act="addsite" data-unlocked><span class="ic">▤</span><span><b>Add site</b><small>Create a new site manually</small></span></a>
     <a href="#" data-act="editsite" data-unlocked><span class="ic">✎</span><span><b>Rename or delete this site</b><small id="editsiteSub">Current site</small></span></a>
     <a href="#" data-act="fill"><span class="ic">≡</span><span><b>Quick fill</b><small>Set WD for everyone still blank</small></span></a>
-    <a href="#" data-act="std"><span class="ic">∑</span><span><b>Standard month length</b><small id="stdSub">30 days — drives the OT / AB formula</small></span></a>
     <a href="#" data-act="export"><span class="ic">⤓</span><span><b>Export Excel</b><small>One sheet per site, ready to send</small></span></a>
     <a href="#" data-act="backup"><span class="ic">⛁</span><span><b>Backup / restore data</b><small>Save or load a .json copy of everything</small></span></a>
     <a href="#" data-act="clear" class="danger"><span class="ic">⌫</span><span><b>Clear this month's entries</b><small>Current site only — operators are kept</small></span></a>
@@ -244,20 +243,6 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     <button class="btn pri" id="expRun">Save &amp; share</button>
   </div>
   <div class="note" id="expHint" style="padding-top:0"></div>
-</div>
-
-<!-- standard month -->
-<div class="sheet" id="shStd">
-  <div class="grab"></div><h2>Standard month length</h2>
-  <div class="note">
-    The supervisor types <b>WD</b> only — OT and AB are worked out from it:<br>
-    <span class="pill">WD &lt; standard → AB = standard − WD</span>
-    <span class="pill">WD &gt; standard → OT = WD − standard</span>
-    <span class="pill">WD = standard → both blank</span><br>
-    OT and AB are calculated, not editable — the supervisor cannot get them wrong.
-  </div>
-  <div class="form"><div class="field"><label>Standard days</label><input type="number" id="stdVal" inputmode="numeric" min="1" max="31"></div></div>
-  <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="stdSave">Save &amp; recalculate</button></div>
 </div>
 
 <!-- quick fill -->
@@ -567,16 +552,23 @@ function curSite(){ return DB.sites.find(s=>s.id===DB.ui.site) || DB.sites[0] ||
 function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); }
 
 /* ---- WD and OT are typed, AB is worked out -----------------------------
-   Standard month = 30 days by default (changeable in the menu).
-     AB = standard - WD   when WD is below the standard
-     AB is blank          when WD equals the standard
-   WD can never exceed the standard — extra days belong in OT, and letting a
+   The standard is the real length of the month being filled in — 31 in
+   January, 30 in April, 28 or 29 in February. It is read from the month
+   itself, so there is nothing to set and nothing to keep in step.
+     AB = days in month - WD   when WD is below the month
+     AB is blank               when WD equals the month
+   WD can never exceed the month — extra days belong in OT, and letting a
    day count as both worked and overtime is how payroll goes wrong. OT is
    whatever the supervisor typed and is never touched. */
-function stdDays(){ const v = +(DB.settings && DB.settings.std); return v>0 ? v : 30; }
+function stdDays(ym){
+  const m = /^\d{4}-\d{2}$/.test(ym||'') ? ym : curMonth();
+  const p = m.split('-');
+  const d = new Date(+p[0], +p[1], 0).getDate();   // day 0 of next month = last of this
+  return d > 0 ? d : 30;
+}
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
-  const std = stdDays();
+  const std = stdDays(ym);
   delete e.otM; delete e.abM;                       // legacy flags — no manual AB any more
   if(e.wd != null && e.wd > std) e.wd = std;        // hard ceiling
   if(e.wd == null) delete e.ab;
@@ -700,7 +692,7 @@ function fld(e){
 
 /* -------------------------------------------------------------- events */
 $('#selSite').addEventListener('change', e=>{ DB.ui.site=e.target.value; save(); render(); });
-$('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); render(); if(cloudOn()) cloudBootstrap(true); });
+$('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); deriveAll(); render(); if(cloudOn()) cloudBootstrap(true); });
 $('#q').addEventListener('input', render);
 
 $('#list').addEventListener('input', e=>{
@@ -750,7 +742,6 @@ function updateChips(){
 $('#btnMenu').addEventListener('click', ()=>{
   const nOps = DB.sites.reduce((a,s)=>a+s.operators.length,0);
   $('#editsiteSub').textContent = curSite() ? curSite().name : 'No site selected';
-  $('#stdSub').textContent = stdDays()+' days — drives the OT / AB formula';
   $('#setupSub').textContent = DB.supervisor
     ? 'Loaded for '+DB.supervisor.name+(DB.supervisor.state?' · '+DB.supervisor.state:'')
     : 'Assigns your sites — sent to you by head office';
@@ -773,7 +764,6 @@ $('#shMenu').addEventListener('click', e=>{
     else if(act==='addsite') openSite(null);
     else if(act==='editsite'){ if(!curSite()) return toast('No site selected'); openSite(curSite().id); }
     else if(act==='fill'){ if(!curSite()) return toast('Add a site first'); $('#fillVal').value=stdDays(); show('#shFill'); }
-    else if(act==='std'){ $('#stdVal').value=stdDays(); show('#shStd'); }
     else if(act==='export') openExport();
     else if(act==='backup') show('#shBackup');
     else if(act==='clear') clearMonth();
@@ -853,16 +843,6 @@ $('#siteDelete').addEventListener('click', ()=>{
   save(); hide(); render(); toast('Site deleted');
 });
 $('#selSite').addEventListener('dblclick', ()=>{ if(curSite()) openSite(curSite().id); });
-
-/* standard month length */
-$('#stdSave').addEventListener('click', ()=>{
-  const v = Math.round(+$('#stdVal').value||0);
-  if(!(v>0 && v<=31)) return toast('Enter a number between 1 and 31');
-  DB.settings = DB.settings || {}; DB.settings.std = v; save();
-  const n = deriveAll();
-  hide(); render();
-  toast('Standard month set to '+v+' days · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4200);
-});
 
 /* quick fill */
 $('#fillRun').addEventListener('click', ()=>{
@@ -1102,7 +1082,7 @@ $('#impRun').addEventListener('click', async ()=>{
         if(withEntries){
           const num = key => { const raw=g(key); if(raw===''||raw===null) return null;
                                const v=Math.round(Math.abs(+raw)); return isFinite(v)?v:null; };
-          const std = stdDays();
+          const std = stdDays(ym);
           let wd = num('wd');
           if(wd==null){                       // no WD column filled — work it back from AB or OT
             const ab = num('ab'), ot = num('ot');
@@ -1228,6 +1208,11 @@ if(!DB.settings) DB.settings = { std: 30 };
 for(const s of DB.sites){ const used=new Set();
   for(const o of s.operators){ if(!o.key) o.key = makeKey(o.code, o.name, used); else used.add(o.key); } }
 deriveAll();                       // normalise anything stored by an older version
+/* The standard used to be a fixed 30 kept in DB.settings.std. It is now the
+   real length of each month, so every entry ever filed is re-derived once, in
+   every site and every month, and the dead setting is dropped. */
+if(DB.settings && DB.settings.std != null){ delete DB.settings.std; }
+deriveAll();
 render(); save();
 const _t = tokenFromUrl();
 if(_t && _t !== DB.token){ DB.token = _t; DB.entries = {}; DB.pending = {}; save(); }
