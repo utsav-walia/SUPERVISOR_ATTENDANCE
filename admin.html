@@ -124,9 +124,10 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <span class="muted" id="rejCount"></span>
       <button class="btn" id="rejDl">Download the list</button>
     </div>
-    <p class="hint">Every operator must have an EMP Code, and no two operators anywhere may share one.
-      These rows break that, so the whole file was refused and your existing list is untouched.
-      Correct these rows in the master Excel and load it again.</p>
+    <p class="hint">Every operator must have an EMP Code, and no two operators anywhere may share
+      an EMP Code or a bank account number. IFSC codes must be well formed, but may be shared —
+      men at the same branch will match. These rows break those rules, so the whole file was refused
+      and your existing list is untouched. Correct them in the master Excel and load it again.</p>
     <div id="rejTable"></div>
   </div>
 
@@ -542,15 +543,19 @@ function renderSups(){
 }
 $('#supQ').addEventListener('input', renderSups);
 
-/* ---------------------------------------- rows the two code rules refused */
+/* ------------------------------------------ rows the import rules refused */
 let rejects = [];
+function rejCount(kind){ return rejects.filter(r=>r.kind===kind).length; }
 function renderRejects(){
   const panel=$('#rejPanel');
   if(!rejects.length){ panel.style.display='none'; return; }
   panel.style.display='';
-  const noCode = rejects.filter(r=>!r.code).length;
-  $('#rejCount').textContent = rejects.length+' bad row(s) · '+noCode+' with no code · '+
-                               (rejects.length-noCode)+' duplicate code';
+  const bits=[];
+  if(rejCount('nocode'))  bits.push(rejCount('nocode')+' with no code');
+  if(rejCount('code'))    bits.push(rejCount('code')+' duplicate code');
+  if(rejCount('account')) bits.push(rejCount('account')+' duplicate account');
+  if(rejCount('ifsc'))    bits.push(rejCount('ifsc')+' bad IFSC');
+  $('#rejCount').textContent = rejects.length+' bad row(s) · '+bits.join(' · ');
   const rows = rejects.map(r=>
     '<tr><td>'+esc(r.site)+'</td><td class="num">'+r.row+'</td>'+
     '<td>'+(r.code?'<b>'+esc(r.code)+'</b>':'<span class="tag none">blank</span>')+'</td>'+
@@ -577,18 +582,28 @@ $('#masterRun').addEventListener('click', async ()=>{
     const sheets=await parseXlsx(await f.arrayBuffer());
 
     /* ---- pass one: read the whole file and judge it. Nothing is written to
-       CFG here. Two rules, and either one condemns the file:
+       CFG here. Four rules, and any one of them condemns the file:
          1. every operator must have an EMP Code
          2. an EMP Code may belong to only one man, anywhere in the company
+         3. a bank account number may belong to only one man, anywhere
+         4. an IFSC code must be well formed — but may be shared, since men at
+            the same branch legitimately match
        A half-applied import would be worse than no import, so the file is only
        touched once it is known to be clean. */
     rejects = [];
     const skipped=[], parsed=[];
-    const owner = new Map();                 // CODE -> {site, name} already in the console
+    const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+    const owner     = new Map();   // CODE    -> {site, name, id} already in the console
+    const acctOwner = new Map();   // ACCOUNT -> {site, name, code, id} already in the console
     CFG.sites.forEach(s => s.operators.forEach(o => {
       if(o.code) owner.set(o.code, {site:s.name, name:o.name, id:s.id});
+      const a = trim(o.account);
+      if(a) acctOwner.set(a, {site:s.name, name:o.name, code:o.code, id:s.id});
     }));
-    const inFile = new Map();                // CODE -> {site, name} seen in this file
+
+    const inFile     = new Map();  // CODE    -> {site, name} seen in this file
+    const acctInFile = new Map();  // ACCOUNT -> {site, name, code} seen in this file
 
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
@@ -601,22 +616,47 @@ $('#masterRun').addEventListener('click', async ()=>{
         const father=trim(g('father')), account=trim(g('account')), ifsc=trim(g('ifsc')).toUpperCase();
         const row={site:clean, siteId:id, row:i+1, code, name, father, account, ifsc};
 
-        if(!code){ rejects.push(Object.assign({}, row, {why:'No EMP Code'})); continue; }
+        if(!code){ rejects.push(Object.assign({}, row, {kind:'nocode', why:'No EMP Code'})); continue; }
 
         const twice = inFile.get(code);
         const held  = owner.get(code);
         if(twice){
-          rejects.push(Object.assign({}, row,
-            {why:'EMP Code repeated — also on '+twice.name+' at '+twice.site+' in this file'}));
+          rejects.push(Object.assign({}, row, {kind:'code',
+            why:'EMP Code repeated — also on '+twice.name+' at '+twice.site+' in this file'}));
           continue;
         }
         // the same code on the same site is that man being updated, not a clash
         if(held && held.id !== id){
-          rejects.push(Object.assign({}, row,
-            {why:'EMP Code already belongs to '+held.name+' at '+held.site}));
+          rejects.push(Object.assign({}, row, {kind:'code',
+            why:'EMP Code already belongs to '+held.name+' at '+held.site}));
           continue;
         }
+
+        // IFSC — shape only. Sharing one is normal and must never be refused.
+        if(ifsc && !IFSC_RE.test(ifsc)){
+          rejects.push(Object.assign({}, row, {kind:'ifsc',
+            why:'IFSC code is malformed — expected 4 letters, then 0, then 6 more'}));
+          continue;
+        }
+
+        // Account number — one account, one man, anywhere in the company.
+        if(account){
+          const aTwice = acctInFile.get(account);
+          const aHeld  = acctOwner.get(account);
+          if(aTwice){
+            rejects.push(Object.assign({}, row, {kind:'account',
+              why:'Account number repeated — also on '+aTwice.name+' ('+aTwice.code+') at '+aTwice.site+' in this file'}));
+            continue;
+          }
+          if(aHeld && aHeld.code !== code){
+            rejects.push(Object.assign({}, row, {kind:'account',
+              why:'Account number already belongs to '+aHeld.name+' ('+aHeld.code+') at '+aHeld.site}));
+            continue;
+          }
+        }
+
         inFile.set(code, {site:clean, name});
+        if(account) acctInFile.set(account, {site:clean, name, code});
         recs.push(row);
       }
       parsed.push({id, clean, recs});
@@ -626,9 +666,12 @@ $('#masterRun').addEventListener('click', async ()=>{
     if(rejects.length){
       renderRejects();
       try{ $('#rejPanel').scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){}
-      const noCode = rejects.filter(r=>!r.code).length;
-      toast('FILE REJECTED — nothing was loaded. '+rejects.length+' bad row(s): '+
-            noCode+' with no EMP Code, '+(rejects.length-noCode)+' duplicate code(s).', 7000);
+      const bits=[];
+      if(rejCount('nocode'))  bits.push(rejCount('nocode')+' with no EMP Code');
+      if(rejCount('code'))    bits.push(rejCount('code')+' duplicate code');
+      if(rejCount('account')) bits.push(rejCount('account')+' duplicate account');
+      if(rejCount('ifsc'))    bits.push(rejCount('ifsc')+' malformed IFSC');
+      toast('FILE REJECTED — nothing was loaded. '+rejects.length+' bad row(s): '+bits.join(', ')+'.', 7000);
       return;
     }
 
