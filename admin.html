@@ -124,10 +124,11 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <span class="muted" id="rejCount"></span>
       <button class="btn" id="rejDl">Download the list</button>
     </div>
-    <p class="hint">Every operator must have an EMP Code, and no two operators anywhere may share
-      an EMP Code or a bank account number. IFSC codes must be well formed, but may be shared —
-      men at the same branch will match. These rows break those rules, so the whole file was refused
-      and your existing list is untouched. Correct them in the master Excel and load it again.</p>
+    <p class="hint">Every operator must have an EMP Code. On any one site, no EMP Code and no bank
+      account may appear twice — but the same man may hold a row at several sites, and nothing is
+      compared across sites. IFSC codes must be well formed, though men at the same branch will share
+      one. These rows break those rules, so the whole file was refused and your existing list is
+      untouched. Correct them in the master Excel and load it again.</p>
     <div id="rejTable"></div>
   </div>
 
@@ -589,19 +590,6 @@ $('#masterRun').addEventListener('click', async ()=>{
   try{
     const sheets=await parseXlsx(await f.arrayBuffer());
 
-    /* ---- pass one: read the whole file and judge it. Nothing is written to
-       CFG here. Four rules, and any one of them condemns the file:
-         1. every operator must have an EMP Code
-         2. an EMP Code may belong to only one man, anywhere in the company
-         3. a bank account number may belong to only one man, anywhere
-         4. an IFSC code must be well formed — but may be shared, since men at
-            the same branch legitimately match
-       A half-applied import would be worse than no import, so the file is only
-       touched once it is known to be clean. */
-    rejects = [];
-    const skipped=[], parsed=[];
-    const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-
     /* A sheet finds its site by id first — that is the frozen slug of whatever
        the tab was called when the site was born. If no id matches we try the
        visible name, so a site that has since been renamed is still recognised
@@ -616,12 +604,26 @@ $('#masterRun').addEventListener('click', async ()=>{
       return raw;
     };
 
-    /* Pre-scan: which existing records this file is about to rewrite, and with
-       what account. A man given a corrected EMP Code takes his bank account with
-       him, so the account still filed under his old code must not be held
-       against him. Only records the file actually supplies an account for are
-       set aside — if the sheet leaves the account blank the old one survives the
-       import, so it must keep guarding. */
+    /* ---- pass one: read the whole file and judge it. Nothing is written to
+       CFG here. The rules are all scoped to ONE SITE, because a man may
+       genuinely work at several sites and hold a row at each:
+         1. every operator must have an EMP Code
+         2. an EMP Code may appear only once on a given site
+         3. a bank account may sit against only one EMP Code on a given site
+         4. an IFSC code must be well formed — but may be shared, since men at
+            the same branch legitimately match
+       Nothing is compared across sites. A half-applied import would be worse
+       than no import, so the file is only touched once it is known to be clean. */
+    rejects = [];
+    const skipped=[], parsed=[];
+    const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+    const REAL_ACCT = /^[0-9]{6,}$/;     // anything else is a note, not an account
+
+    /* Which existing records this file rewrites, and with what account. A man
+       given a corrected EMP Code takes his account with him, so the account
+       still filed under his old code must not be held against him. Only records
+       the file supplies an account for are set aside — if the sheet leaves the
+       account blank the old one survives the import and must keep guarding. */
     const incomingAcct = new Map();          // SITEID|CODE -> account in this file
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h) continue;
@@ -633,19 +635,17 @@ $('#masterRun').addEventListener('click', async ()=>{
       }
     }
 
-    const owner     = new Map();   // CODE    -> {site, name, id} already in the console
-    const acctOwner = new Map();   // ACCOUNT -> {site, name, code, id} already in the console
-    CFG.sites.forEach(s => s.operators.forEach(o => {
-      if(o.code) owner.set(o.code, {site:s.name, name:o.name, id:s.id});
+    /* Everything already in the console, keyed by site. */
+    const acctOwner = new Map();   // SITEID|ACCOUNT -> {name, code}
+    CFG.sites.forEach(st => st.operators.forEach(o => {
       const a = trim(o.account);
-      if(!a) return;
-      const replacing = o.code && incomingAcct.get(s.id+'|'+o.code);
-      if(replacing) return;        // this record is being rewritten with a new account
-      acctOwner.set(a, {site:s.name, name:o.name, code:o.code, id:s.id});
+      if(!REAL_ACCT.test(a)) return;
+      if(o.code && incomingAcct.get(st.id+'|'+o.code)) return;   // being rewritten
+      acctOwner.set(st.id+'|'+a, {name:o.name, code:o.code});
     }));
 
-    const inFile     = new Map();  // CODE    -> {site, name} seen in this file
-    const acctInFile = new Map();  // ACCOUNT -> {site, name, code} seen in this file
+    const inFile     = new Map();  // SITEID|CODE    -> name seen in this file
+    const acctInFile = new Map();  // SITEID|ACCOUNT -> {name, code} seen in this file
 
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
@@ -660,17 +660,12 @@ $('#masterRun').addEventListener('click', async ()=>{
 
         if(!code){ rejects.push(Object.assign({}, row, {kind:'nocode', why:'No EMP Code'})); continue; }
 
-        const twice = inFile.get(code);
-        const held  = owner.get(code);
+        // One EMP Code, one man — on this site. The same code at another site is
+        // that man working there too, and is left alone.
+        const twice = inFile.get(id+'|'+code);
         if(twice){
           rejects.push(Object.assign({}, row, {kind:'code',
-            why:'EMP Code repeated — also on '+twice.name+' at '+twice.site+' in this file'}));
-          continue;
-        }
-        // the same code on the same site is that man being updated, not a clash
-        if(held && held.id !== id){
-          rejects.push(Object.assign({}, row, {kind:'code',
-            why:'EMP Code already belongs to '+held.name+' at '+held.site}));
+            why:'EMP Code appears twice on '+clean+' — also on '+twice+' in this file'}));
           continue;
         }
 
@@ -681,24 +676,24 @@ $('#masterRun').addEventListener('click', async ()=>{
           continue;
         }
 
-        // Account number — one account, one man, anywhere in the company.
-        if(account){
-          const aTwice = acctInFile.get(account);
-          const aHeld  = acctOwner.get(account);
+        // One account, one EMP Code — again only within this site.
+        if(REAL_ACCT.test(account)){
+          const aTwice = acctInFile.get(id+'|'+account);
+          const aHeld  = acctOwner.get(id+'|'+account);
           if(aTwice){
             rejects.push(Object.assign({}, row, {kind:'account',
-              why:'Account number repeated — also on '+aTwice.name+' ('+aTwice.code+') at '+aTwice.site+' in this file'}));
+              why:'Account number appears twice on '+clean+' — also on '+aTwice.name+' ('+aTwice.code+') in this file'}));
             continue;
           }
           if(aHeld && aHeld.code !== code){
             rejects.push(Object.assign({}, row, {kind:'account',
-              why:'Account number already belongs to '+aHeld.name+' ('+aHeld.code+') at '+aHeld.site}));
+              why:'Account number is already against '+aHeld.name+' ('+aHeld.code+') on '+clean}));
             continue;
           }
         }
 
-        inFile.set(code, {site:clean, name});
-        if(account) acctInFile.set(account, {site:clean, name, code});
+        inFile.set(id+'|'+code, name);
+        if(REAL_ACCT.test(account)) acctInFile.set(id+'|'+account, {name, code});
         recs.push(row);
       }
       parsed.push({id, clean, recs});
