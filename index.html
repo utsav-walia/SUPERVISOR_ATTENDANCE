@@ -191,7 +191,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     <a href="#" data-act="addsite" data-unlocked><span class="ic">▤</span><span><b>Add site</b><small>Create a new site manually</small></span></a>
     <a href="#" data-act="editsite" data-unlocked><span class="ic">✎</span><span><b>Rename or delete this site</b><small id="editsiteSub">Current site</small></span></a>
     <a href="#" data-act="fill"><span class="ic">≡</span><span><b>Quick fill</b><small>Set WD for everyone still blank</small></span></a>
-    <a href="#" data-act="std"><span class="ic">∑</span><span><b>Standard month length</b><small id="stdSub">30 days — drives the OT / AB formula</small></span></a>
+    <a href="#" data-act="std"><span class="ic">∑</span><span><b>Standard month length</b><small id="stdSub">30 days — AB is worked out from it</small></span></a>
     <a href="#" data-act="export"><span class="ic">⤓</span><span><b>Export Excel</b><small>One sheet per site, ready to send</small></span></a>
     <a href="#" data-act="backup"><span class="ic">⛁</span><span><b>Backup / restore data</b><small>Save or load a .json copy of everything</small></span></a>
     <a href="#" data-act="clear" class="danger"><span class="ic">⌫</span><span><b>Clear this month's entries</b><small>Current site only — operators are kept</small></span></a>
@@ -228,7 +228,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     are read automatically. Existing operators are matched by code and updated — nothing is lost.
   </div>
   <div class="form"><div class="field"><input type="file" id="fFile" accept=".xlsx,.xlsm"></div></div>
-  <label class="check"><input type="checkbox" id="impWdOt"> Also import WD into the selected month (OT and AB are recalculated from it)</label>
+  <label class="check"><input type="checkbox" id="impWdOt"> Also import WD and OT into the selected month (AB is recalculated)</label>
   <label class="check"><input type="checkbox" id="impReplace"> Replace existing operator lists instead of merging</label>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="impRun">Import</button></div>
 </div>
@@ -250,11 +250,12 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 <div class="sheet" id="shStd">
   <div class="grab"></div><h2>Standard month length</h2>
   <div class="note">
-    The supervisor types <b>WD</b> only — OT and AB are worked out from it:<br>
-    <span class="pill">WD &lt; standard → AB = standard − WD</span>
-    <span class="pill">WD &gt; standard → OT = WD − standard</span>
-    <span class="pill">WD = standard → both blank</span><br>
-    OT and AB are calculated, not editable — the supervisor cannot get them wrong.
+    The supervisor types <b>WD</b> and <b>OT</b>. AB is worked out:<br>
+    <span class="pill">AB = standard − WD</span>
+    <span class="pill">WD = standard → AB blank</span>
+    <span class="pill">WD can never exceed the standard</span><br>
+    Extra days go in the <b>OT</b> box, never into WD — a day must not count as
+    both worked and overtime. AB is calculated, not editable.
   </div>
   <div class="form"><div class="field"><label>Standard days</label><input type="number" id="stdVal" inputmode="numeric" min="1" max="31"></div></div>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="stdSave">Save &amp; recalculate</button></div>
@@ -263,7 +264,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 <!-- quick fill -->
 <div class="sheet" id="shFill">
   <div class="grab"></div><h2>Quick fill</h2>
-  <div class="note">Sets WD for every operator on this site who has nothing entered yet for the selected month — OT and AB follow from the formula. Operators already filled in are untouched.</div>
+  <div class="note">Sets WD for every operator on this site who has nothing entered yet for the selected month — AB follows from it. OT is left alone; type that man by man. Operators already filled in are untouched.</div>
   <div class="form"><div class="field"><label>WD value</label><input type="number" id="fillVal" inputmode="numeric"></div></div>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="fillRun">Apply</button></div>
 </div>
@@ -750,7 +751,7 @@ function updateChips(){
 $('#btnMenu').addEventListener('click', ()=>{
   const nOps = DB.sites.reduce((a,s)=>a+s.operators.length,0);
   $('#editsiteSub').textContent = curSite() ? curSite().name : 'No site selected';
-  $('#stdSub').textContent = stdDays()+' days — drives the OT / AB formula';
+  $('#stdSub').textContent = stdDays()+' days — AB is worked out from it';
   $('#setupSub').textContent = DB.supervisor
     ? 'Loaded for '+DB.supervisor.name+(DB.supervisor.state?' · '+DB.supervisor.state:'')
     : 'Assigns your sites — sent to you by head office';
