@@ -257,7 +257,9 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     Extra days go in the <b>OT</b> box, never into WD — a day must not count as
     both worked and overtime. AB is calculated, not editable.
   </div>
-  <div class="form"><div class="field"><label>Standard days</label><input type="number" id="stdVal" inputmode="numeric" min="1" max="31"></div></div>
+  <div class="form"><div class="field"><label>Standard days for <b id="stdSite">this site</b></label><input type="number" id="stdVal" inputmode="numeric" min="1" max="31"></div></div>
+  <div class="note">This is the site's own month length — 26 on a duty site, 30 elsewhere.
+    It belongs to head office: when they next send an update, theirs wins.</div>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="stdSave">Save &amp; recalculate</button></div>
 </div>
 
@@ -568,31 +570,52 @@ function curSite(){ return DB.sites.find(s=>s.id===DB.ui.site) || DB.sites[0] ||
 function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); }
 
 /* ---- WD and OT are typed, AB is worked out -----------------------------
-   Standard month = 30 days by default (changeable in the menu).
+   The standard month belongs to the SITE, not to the phone: most sites are
+   30 days, the duty sites head office contracted at 26 are 26. It arrives
+   with the site from head office and is shown on every screen, so a
+   supervisor holding both kinds of site always sees the right ceiling.
      AB = standard - WD   when WD is below the standard
      AB is blank          when WD equals the standard
    WD can never exceed the standard — extra days belong in OT, and letting a
    day count as both worked and overtime is how payroll goes wrong. OT is
    whatever the supervisor typed and is never touched. */
-function stdDays(){ const v = +(DB.settings && DB.settings.std); return v>0 ? v : 30; }
+function defaultStd(){ const v = +(DB.settings && DB.settings.std); return v>0 ? v : 30; }
+function stdDays(site){
+  const s = site === undefined ? curSite()
+          : (typeof site === 'string' ? DB.sites.find(x=>x.id===site) : site);
+  const v = s ? +s.std : 0;
+  return (v>0 && v<=31) ? v : defaultStd();
+}
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
-  const std = stdDays();
+  const std = stdDays(siteId);
   delete e.otM; delete e.abM;                       // legacy flags — no manual AB any more
-  if(e.wd != null && e.wd > std) e.wd = std;        // hard ceiling
+  // Hard ceiling. A WD over the standard is not thrown away — those days are
+  // overtime, so they move into OT. This is what carries a site from a 30-day
+  // month to a 26-day one without a man losing four days' pay.
+  if(e.wd != null && e.wd > std){
+    e.ot = (+e.ot || 0) + (e.wd - std);
+    e.wd = std;
+  }
   if(e.wd == null) delete e.ab;
   else if(e.wd < std) e.ab = std - e.wd;
   else delete e.ab;
   prune(k); save();
   return DB.entries[k] || {};
 }
-/* Re-apply the formula everywhere (after import, or a standard-days change). */
-function deriveAll(){
+/* Re-apply the formula everywhere (after import, or a standard-days change).
+   Anything the formula actually moved is queued for head office, otherwise a
+   site dropped to 26 days would look right on the phone and wrong in the sheet. */
+function deriveAll(sendChanges){
   let n=0;
+  const ym = curMonth();
   for(const k of Object.keys(DB.entries)){
     const before = JSON.stringify(DB.entries[k]);
     const [s,m,c] = k.split('|'); derive(s,m,c);
-    if(JSON.stringify(DB.entries[k]||{}) !== before) n++;
+    if(JSON.stringify(DB.entries[k]||{}) !== before){
+      n++;
+      if(sendChanges && m===ym) queue(s, c);
+    }
   }
   save(); return n;
 }
@@ -621,7 +644,9 @@ function render(){
   $('#selMonth').value = curMonth();
   const site = curSite(), ym = curMonth(), list=$('#list'), q = norm($('#q').value);
   $('#barTitle').textContent = DB.supervisor ? DB.supervisor.name : 'Attendance CRM';
-  $('#barSub').textContent = site ? site.name + ' · ' + monthLabel(ym) : 'Working Days · Overtime · Absent';
+  $('#barSub').textContent = site
+    ? site.name + ' · ' + monthLabel(ym) + ' · ' + stdDays(site) + ' day month'
+    : 'Working Days · Overtime · Absent';
 
   if(!site){
     $('#chips').innerHTML='';
@@ -639,7 +664,7 @@ function render(){
       : 'Open the menu (☰) and load the setup file head office sent you.')+'</div>';
     return;
   }
-  const std = stdDays();
+  const std = stdDays(site);
   // Two rules head office set: every man needs an EMP Code, and no code may be
   // shared. A man who breaks either cannot be paid against, so he is shown but
   // locked — better a visible complaint than attendance filed against nobody.
@@ -674,7 +699,7 @@ function render(){
       (fault?'':'<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button>')+'</div>'+
       '<div class="meta">'+(meta||'—')+'</div>'+
       (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
-             : '<div class="inputs">'+ fld(e) +'</div>')+'</div>';
+             : '<div class="inputs">'+ fld(e, std) +'</div>')+'</div>';
   }
   $('#chips').innerHTML =
     '<span class="chip">Operators <b>'+payable+'</b></span>'+
@@ -683,14 +708,14 @@ function render(){
     '<span class="chip g">Total WD <b>'+tWd+'</b></span>'+
     '<span class="chip b">Total OT <b>'+tOt+'</b></span>'+
     '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
-    '<span class="chip">Standard month <b>'+std+'</b></span>';
+    '<span class="chip'+(std!==30?' b':'')+'">Standard month <b>'+std+'</b></span>';
 
   list.innerHTML = html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
     (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>';
 }
 /* WD is the only editable field. OT and AB are read-only result boxes. */
-function fld(e){
-  const std = stdDays();
+function fld(e, std){
+  if(!(std>0)) std = stdDays();
   return '<div class="inp wd"><label>WD</label>'+
       '<input type="number" inputmode="numeric" min="0" max="'+std+'" step="1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
     '<div class="inp ot"><label>OT</label>'+
@@ -710,8 +735,8 @@ $('#list').addEventListener('input', e=>{
   const card = e.target.closest('.card'), code = card.dataset.key;
   const site = curSite().id, ym = curMonth();
 
-  // WD may not go past the standard month; overtime belongs in the OT box
-  const ceiling = fieldName === 'wd' ? stdDays() : 999;
+  // WD may not go past THIS SITE's standard month; overtime belongs in the OT box
+  const ceiling = fieldName === 'wd' ? stdDays(site) : 999;
   let v = inp.value.trim();
   if(v!==''){
     const c = Math.max(0, Math.min(ceiling, Math.round(+v || 0)));
@@ -751,7 +776,9 @@ function updateChips(){
 $('#btnMenu').addEventListener('click', ()=>{
   const nOps = DB.sites.reduce((a,s)=>a+s.operators.length,0);
   $('#editsiteSub').textContent = curSite() ? curSite().name : 'No site selected';
-  $('#stdSub').textContent = stdDays()+' days — AB is worked out from it';
+  $('#stdSub').textContent = curSite()
+    ? stdDays()+' days on '+curSite().name+' — AB is worked out from it'
+    : 'AB is worked out from it';
   $('#setupSub').textContent = DB.supervisor
     ? 'Loaded for '+DB.supervisor.name+(DB.supervisor.state?' · '+DB.supervisor.state:'')
     : 'Assigns your sites — sent to you by head office';
@@ -774,7 +801,12 @@ $('#shMenu').addEventListener('click', e=>{
     else if(act==='addsite') openSite(null);
     else if(act==='editsite'){ if(!curSite()) return toast('No site selected'); openSite(curSite().id); }
     else if(act==='fill'){ if(!curSite()) return toast('Add a site first'); $('#fillVal').value=stdDays(); show('#shFill'); }
-    else if(act==='std'){ $('#stdVal').value=stdDays(); show('#shStd'); }
+    else if(act==='std'){
+      if(!curSite()) return toast('Add a site first');
+      $('#stdVal').value=stdDays();
+      $('#stdSite').textContent = curSite().name;
+      show('#shStd');
+    }
     else if(act==='export') openExport();
     else if(act==='backup') show('#shBackup');
     else if(act==='clear') clearMonth();
@@ -873,14 +905,16 @@ $('#siteDelete').addEventListener('click', ()=>{
 });
 $('#selSite').addEventListener('dblclick', ()=>{ if(curSite()) openSite(curSite().id); });
 
-/* standard month length */
+/* standard month length — of the current site */
 $('#stdSave').addEventListener('click', ()=>{
+  const site = curSite(); if(!site) return toast('Add a site first');
   const v = Math.round(+$('#stdVal').value||0);
   if(!(v>0 && v<=31)) return toast('Enter a number between 1 and 31');
-  DB.settings = DB.settings || {}; DB.settings.std = v; save();
-  const n = deriveAll();
+  site.std = v; save();
+  const n = deriveAll(true);
+  // WD now over the ceiling has been capped; the days it lost are overtime
   hide(); render();
-  toast('Standard month set to '+v+' days · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4200);
+  toast(site.name+' set to a '+v+' day month · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4600);
 });
 
 /* quick fill */
@@ -922,7 +956,9 @@ $('#setupRun').addEventListener('click', async ()=>{
         const have = new Set(ops.map(opKey));
         for(const o of ex.operators) if(!have.has(opKey(o))){ ops.push(o); kept++; }
       }
-      return { id:s.id, name:cleanSiteName(s.name), operators:ops };
+      const std = +s.std;
+      return { id:s.id, name:cleanSiteName(s.name),
+               std: (std>0 && std<=31) ? std : undefined, operators:ops };
     });
     added = sites.reduce((a,s)=>a+s.operators.length,0);
 
@@ -1004,7 +1040,9 @@ async function cloudBootstrap(silent){
     if(d.std) DB.settings = Object.assign({}, DB.settings, {std:d.std});
 
     const keep = new Set(d.sites.map(s=>s.id));
+    // the site's own month length comes down with it — 26 on a duty site
     DB.sites = d.sites.map(s=>({ id:s.id, name:cleanSiteName(s.name),
+      std: (+s.std>0 && +s.std<=31) ? +s.std : undefined,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // drop anything for sites he no longer holds
     for(const k of Object.keys(DB.entries)) if(!keep.has(k.split('|')[0])) delete DB.entries[k];
@@ -1121,7 +1159,7 @@ $('#impRun').addEventListener('click', async ()=>{
         if(withEntries){
           const num = key => { const raw=g(key); if(raw===''||raw===null) return null;
                                const v=Math.round(Math.abs(+raw)); return isFinite(v)?v:null; };
-          const std = stdDays();
+          const std = stdDays(site);
           let wd = num('wd');
           if(wd==null){                       // no WD column filled — work it back from AB or OT
             const ab = num('ab'), ot = num('ot');
