@@ -199,12 +199,31 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <button class="btn pri" id="dlAll">Download all as ZIP</button>
       <button class="btn" id="dlEach">Download each separately</button>
       <span class="grow"></span>
-      <label class="muted" style="display:flex;gap:7px;align-items:center">Default month for new sites
-        <input type="number" id="stdVal" min="1" max="31" style="width:74px">
+      <label class="muted" style="display:flex;gap:7px;align-items:center"
+        title="Blank means a new site runs the real length of each month. Duty sites are pinned at 26 regardless.">Pin new sites to
+        <input type="number" id="stdVal" min="0" max="31" placeholder="calendar" style="width:96px">
       </label>
     </div>
   </div>
   <div class="panel" style="padding:0;overflow:hidden"><div id="issueTable"></div></div>
+
+  <div class="panel">
+    <div class="bar" style="margin-bottom:10px">
+      <h2 style="margin:0">National holidays</h2><span class="grow"></span>
+      <input type="number" id="holYear" min="2024" max="2099" step="1" style="max-width:110px">
+      <button class="btn" id="holReset">Undo my changes for this year</button>
+    </div>
+    <p class="hint">A man whose WD is the full standard was there every day, so he is given
+      <b>one OT day per holiday</b> in that month. The supervisor can turn it off for anyone who was
+      actually off. It reaches payroll inside the <b>OT</b> column; the sheet keeps the split in its
+      own <code>nh</code> column.<br><br>
+      26 January, 15 August and 2 October are fixed. <b>Holi</b> (Dhulandi) and <b>Diwali</b>
+      (Lakshmi Puja) move with the Hindu calendar and are only built in for
+      <b>2026&ndash;2031</b> — the almanacs disagree after that by about a month over where a leap
+      month falls, so rather than guess, the app says it does not know and you set the date here.
+      Leave a date blank to drop that holiday for the year.</p>
+    <div id="holTable"></div>
+  </div>
 </section>
 
 <!-- ========================================== 4. merge ============== -->
@@ -322,11 +341,19 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <div class="f"><label>Site name</label><input type="text" id="stName" autocomplete="off"></div>
     <p class="muted" style="font-size:12.5px;margin:0">The site name becomes the sheet name in every export, so keep it
       exactly as you want it to appear in payroll.</p>
-    <div class="f"><label>Standard days in the month</label>
-      <input type="number" id="stStd" min="1" max="31" style="width:110px"></div>
-    <p class="muted" style="font-size:12.5px;margin:0">26 on a duty site, 30 everywhere else. WD is capped at this
-      number on the supervisor's phone, AB is worked out from it, and any day beyond it is overtime.
-      Changing it re-does the attendance already recorded for this site the next time you upload.</p>
+    <div class="f"><label>Standard days — blank means the length of the month</label>
+      <input type="number" id="stStd" min="0" max="31" placeholder="calendar" style="width:150px"></div>
+    <p class="muted" style="font-size:12.5px;margin:0">Leave it blank and the site runs the real length of each
+      month — 28 in February, 31 in August. Put a number in to fix it whatever the month, as the 26-day duty
+      sites are. WD is capped at this on the supervisor's phone, AB is worked out from it, and any day beyond
+      it is overtime. Changing it re-does the attendance already recorded for this site the next time you upload.</p>
+    <div class="f"><label style="display:flex;gap:8px;align-items:center">
+      <input type="checkbox" id="stCanteen" style="width:auto"> This site runs a canteen</label></div>
+    <div class="f"><label>Canteen rate — ₹ per meal</label>
+      <input type="number" id="stRate" min="0" step="0.5" style="width:130px"></div>
+    <p class="muted" style="font-size:12.5px;margin:0">The supervisor gets a <b>Canteen</b> tab for this site and
+      counts meals per man; the rate turns that into rupees. He can type an amount instead, which overrides the
+      rate for that man. Without a rate he can only type amounts. It reaches payroll as the <b>CANTEEN</b> column.</p>
   </div>
   <div class="foot">
     <button class="btn dgr" id="siteDel">Delete</button>
@@ -534,12 +561,74 @@ const DUTY_26_SITES = [
   'SUDAMA WOOD',
   'CANDOR SONA ROAD','CANDOR'
 ];
+/* ------------------------------------------------------ national holidays
+   The same table as Code.gs and index.html. Change one, change all.
+   Only years verified against agreeing sources are here; from 2032 the
+   almanacs disagree by roughly a month over an adhik maas, so head office
+   sets those from the Holidays panel and the override always wins. */
+const FIXED_HOLIDAYS = [
+  { md:'01-26', key:'Republic Day',     name:'Republic Day' },
+  { md:'08-15', key:'Independence Day', name:'Independence Day' },
+  { md:'10-02', key:'Gandhi Jayanti',   name:'Gandhi Jayanti' }
+];
+const LUNAR_HOLIDAYS = {
+  2026:{holi:'03-04', diwali:'11-08'},
+  2027:{holi:'03-22', diwali:'10-29'},
+  2028:{holi:'03-11', diwali:'10-17'},
+  2029:{holi:'03-01', diwali:'11-05'},
+  2030:{holi:'03-20', diwali:'10-26'},
+  2031:{holi:'03-09', diwali:'11-14'}
+};
+/** What is actually in force for a year: the table, with CFG.holidays on top. */
+function holidaysOfYear(year){
+  const over = (CFG.holidays||{})[String(year)] || {};
+  const lunar = LUNAR_HOLIDAYS[year] || {};
+  const row = (key, name, builtin) => {
+    const has = over[key] !== undefined;
+    return { key, name, builtin: builtin||'', md: has ? over[key] : (builtin||''), edited: has };
+  };
+  return [
+    row('Republic Day','Republic Day','01-26'),
+    row('holi','Holi (Dhulandi)', lunar.holi),
+    row('Independence Day','Independence Day','08-15'),
+    row('Gandhi Jayanti','Gandhi Jayanti','10-02'),
+    row('diwali','Diwali (Lakshmi Puja)', lunar.diwali)
+  ].sort((a,b)=>(a.md||'99')<(b.md||'99')?-1:(a.md||'99')>(b.md||'99')?1:0);
+}
+
 const nameKey = s => String(s==null?'':s).toUpperCase().replace(/[^A-Z0-9]+/g,'');
+
+/* ---------------------------------------------------------- canteen sites
+   The six sites that run a canteen, under every spelling head office has used
+   — BHIWALI as well as BHIWADI, and the short names still live in this browser.
+   Like the duty list this only stamps a site the FIRST time it is seen, so
+   switching one off here is never undone by the next import.
+   Rates are not guessed: head office sets them, and a canteen site without one
+   is flagged on the Sites tab. */
+const CANTEEN_SITES = [
+  'BALAJI','BALAJI SITARGANJ',
+  'ASAHI ROORKEE','ASAHI TALOJA',
+  'AGGARWAL BHIWADI','AGGARWAL BHIWALI','AGGARWAL',
+  'CAVENDISH','CAVENDISH JK TYRE',
+  'MERINO BAHADURGARH'
+];
 const DUTY_26 = new Set(DUTY_26_SITES.map(nameKey));
-/** What a brand new site's month length should be. */
-const stdForNewSite = name => DUTY_26.has(nameKey(name)) ? 26 : (CFG.std||30);
-/** A site's month length, falling back to the global default. */
-function siteStd(s){ const v = s ? +s.std : 0; return (v>0&&v<=31) ? v : (CFG.std||30); }
+/** What a brand new site should be pinned to — 26 on a duty site, otherwise
+    nothing at all, meaning it runs the real length of each month. */
+const stdForNewSite = name => DUTY_26.has(nameKey(name)) ? 26 : 0;
+/** How many days the calendar gives a month. 'YYYY-MM' -> 28..31. */
+function daysInMonth(ym){
+  if(!/^\d{4}-\d{2}$/.test(ym||'')) return 30;
+  return new Date(+ym.slice(0,4), +ym.slice(5,7), 0).getDate();
+}
+/** What a site is PINNED to, or 0 meaning it follows the length of the month. */
+function sitePin(s){ const v = s ? +s.std : 0; return (v>0&&v<=31) ? v : 0; }
+/** A site's standard for a given month. */
+function siteStd(s, ym){ return sitePin(s) || daysInMonth(ym || new Date().toISOString().slice(0,7)); }
+
+const CANTEEN_SET = new Set(CANTEEN_SITES.map(nameKey));
+const canteenForNewSite = name => CANTEEN_SET.has(nameKey(name));
+const siteRate = s => { const v = s ? +s.canteenRate : 0; return (v>0&&isFinite(v)) ? v : 0; };
 
 /* ------------------------------------------------------------- config */
 const KEY='attendance-crm-admin.v1';
@@ -554,7 +643,8 @@ function saveCfg(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(
 function fingerprint(){
   return JSON.stringify({
     std: CFG.std,
-    s: CFG.sites.map(s=>s.id+':'+s.name+':'+siteStd(s)+':'+s.operators.map(o=>
+    h: CFG.holidays || {},
+    s: CFG.sites.map(s=>s.id+':'+s.name+':'+sitePin(s)+':'+(s.canteen?'C':'-')+siteRate(s)+':'+s.operators.map(o=>
          o.code+'|'+o.name+'|'+o.father+'|'+o.account+'|'+o.ifsc).join(',')),
     p: CFG.supervisors.map(x=>x.token+':'+x.name+':'+(x.siteIds||[]).join('+'))
   });
@@ -566,7 +656,17 @@ function markPushed(){ CFG.pushed = fingerprint(); saveCfg(); renderHdr(); }
     this browser, and on a backup made before sites carried their own. */
 function backfillStd(){
   let n=0;
-  CFG.sites.forEach(s=>{ if(!(+s.std>0 && +s.std<=31)){ s.std = stdForNewSite(s.name); n++; } });
+  CFG.sites.forEach(s=>{
+    if(s.std === undefined || s.std === null || s.std === ''){ s.std = stdForNewSite(s.name); n++; }
+    if(s.canteen === undefined){ s.canteen = canteenForNewSite(s.name); n++; }
+  });
+  // An earlier version pinned every ordinary site at 30 — that was the old fixed
+  // default. Those are released to follow the calendar, once. A site pinned to
+  // anything else, 26 included, is a decision and is left alone.
+  if(!CFG.calendarMigrated){
+    CFG.sites.forEach(s=>{ if(+s.std === 30 && !DUTY_26.has(nameKey(s.name))){ s.std = 0; n++; } });
+    CFG.calendarMigrated = 1;
+  }
   if(n) saveCfg();
   return n;
 }
@@ -582,14 +682,14 @@ $$('nav button').forEach(b=>b.addEventListener('click',()=>{
 }));
 
 /* ------------------------------------------------------------ render */
-function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHdr(); renderLinks(); saveCfg(); }
+function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHolidays(); renderHdr(); renderLinks(); saveCfg(); }
 function renderHdr(){
   const ops=CFG.sites.reduce((a,s)=>a+s.operators.length,0);
   const dirty = CFG.sites.length && !isPushed();
   $('#hdrStat').innerHTML = esc(CFG.sites.length+' sites · '+ops+' operators · '+
       CFG.supervisors.length+' supervisors') +
     (dirty ? '<b class="unsent">● not uploaded — supervisors still see the old list</b>' : '');
-  $('#stdVal').value = CFG.std||30;
+  $('#stdVal').value = CFG.std || '';
   const bar = $('#unsentBar');
   if(bar) bar.style.display = dirty ? '' : 'none';
 }
@@ -598,20 +698,28 @@ function renderSites(){
   $('#siteCount').textContent = CFG.sites.length ? CFG.sites.length+' sites' : '';
   if(!CFG.sites.length){ el.innerHTML='<div class="empty"><b>No sites yet</b>Load your master Excel above.</div>'; return; }
   const rows = CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>{
-    const sup=supsOfSite(s.id), st=siteStd(s);
+    const sup=supsOfSite(s.id), pin=sitePin(s), rate=siteRate(s);
     return '<tr><td><b>'+esc(s.name)+'</b></td>'+
       '<td class="num">'+s.operators.length+'</td>'+
-      '<td class="num">'+(st===30?'<span class="muted">30</span>':'<b>'+st+'</b>')+'</td>'+
+      '<td class="num">'+(pin?'<b>'+pin+'</b>':'<span class="muted">calendar</span>')+'</td>'+
+      '<td class="num">'+(!s.canteen ? '<span class="muted">—</span>'
+        : (rate ? '<b>₹'+rate+'</b>' : '<span class="tag none">no rate</span>'))+'</td>'+
       '<td>'+(sup.length?sup.map(x=>'<span class="tag">'+esc(x.name)+'</span>').join('')
                        :'<span class="tag none">unassigned</span>')+'</td>'+
       '<td class="right"><button class="btn sm" data-site="'+s.id+'">Edit</button></td></tr>';
   }).join('');
-  const n26 = CFG.sites.filter(s=>siteStd(s)!==30).length;
+  const n26 = CFG.sites.filter(s=>sitePin(s)).length;
+  const noRate = CFG.sites.filter(s=>s.canteen && !siteRate(s));
   el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th>'+
-    '<th class="right">Month</th><th>Supervisor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    (n26?'<p class="hint" style="padding:10px 14px;margin:0">'+n26+
-        ' site(s) work a shorter month. On those, WD is capped at that number and '+
-        'anything beyond it counts as OT.</p>':'');
+    '<th class="right">Month</th><th class="right">Canteen</th><th>Supervisor</th><th></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<p class="hint" style="padding:10px 14px 0;margin:0"><b>calendar</b> means the site runs the real '+
+      'length of each month — 28 in February, 31 in August — and that is what WD is capped at. '+
+      (n26?n26+' site(s) are pinned to a fixed number instead, whatever the month.':'')+'</p>'+
+    (noRate.length?'<p class="hint" style="padding:10px 14px;margin:0;color:#b3261e">'+
+        '<b>'+noRate.length+' canteen site(s) have no rate:</b> '+
+        noRate.map(s=>esc(s.name)).join(', ')+'. The supervisor can count meals but the '+
+        'amount cannot be worked out — he would have to type the money himself.</p>':'');
   el.querySelectorAll('[data-site]').forEach(b=>b.addEventListener('click',()=>openSite(b.dataset.site)));
 }
 function renderSups(){
@@ -819,8 +927,12 @@ $('#masterRun').addEventListener('click', async ()=>{
       let site=CFG.sites.find(s=>s.id===id);
       // A new site gets its month length from the duty list; an existing one keeps
       // whatever it already has, so an import never undoes a decision made here.
-      if(!site){ site={id, name:clean, std:stdForNewSite(clean), operators:[]}; CFG.sites.push(site); nSites++; }
-      else { site.name = clean; if(!(+site.std>0)) site.std = stdForNewSite(clean); }
+      if(!site){ site={id, name:clean, std:stdForNewSite(clean),
+                       canteen:canteenForNewSite(clean), canteenRate:0, operators:[]};
+                 CFG.sites.push(site); nSites++; }
+      else { site.name = clean;
+             if(!(+site.std>0)) site.std = stdForNewSite(clean);
+             if(site.canteen === undefined) site.canteen = canteenForNewSite(clean); }
       if(replace){
         // the file is the truth for this site: anyone not in it has left
         const keep=new Set(recs.map(r=>r.code));
@@ -879,7 +991,9 @@ function openSite(id){
   const s=id?siteById(id):null;
   $('#siteTitle').textContent = s?'Edit site':'Add site';
   $('#stName').value = s?s.name:'';
-  $('#stStd').value = s?siteStd(s):(CFG.std||30);
+  $('#stStd').value = s ? (sitePin(s) || '') : '';
+  $('#stCanteen').checked = s ? !!s.canteen : false;
+  $('#stRate').value = s && siteRate(s) ? siteRate(s) : '';
   $('#siteDel').style.display = s?'':'none';
   $('#dlgSite').showModal();
 }
@@ -916,17 +1030,23 @@ $('#addSite').addEventListener('click',()=>openSite(null));
 $('#siteCancel').addEventListener('click',()=>$('#dlgSite').close());
 $('#siteSave').addEventListener('click',()=>{
   const name=trim($('#stName').value); if(!name) return toast('Enter a site name');
-  const std=Math.round(+$('#stStd').value||0);
-  if(!(std>0&&std<=31)) return toast('Standard days must be between 1 and 31');
-  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.std=std; }
+  const stdRaw=trim($('#stStd').value);
+  const std = stdRaw==='' ? 0 : Math.round(+stdRaw||0);
+  if(stdRaw!=='' && !(std>0&&std<=31)) return toast('Standard days must be 1 to 31, or blank for the length of the month');
+  const canteen = $('#stCanteen').checked;
+  const rateIn = trim($('#stRate').value);
+  const rate = rateIn==='' ? 0 : +rateIn;
+  if(canteen && rateIn!=='' && !(rate>0)) return toast('The canteen rate must be more than 0, or left blank');
+  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.std=std; s.canteen=canteen; s.canteenRate=rate; }
   else{
     const id=slug(name);
     if(siteById(id)) return toast('A site with that name already exists');
-    CFG.sites.push({id, name, std, operators:[]});
+    CFG.sites.push({id, name, std, canteen, canteenRate:rate, operators:[]});
   }
   $('#dlgSite').close(); renderAll();
-  toast('Saved — '+name+' runs a '+std+' day month'+
-        (isPushed()?'':'. Press ⇧ Upload on the Cloud tab to send it.'), 5000);
+  toast('Saved — '+name+(std ? ' fixed at '+std+' days' : ' runs the length of each month')+
+        (canteen ? (rate ? ' · canteen ₹'+rate+' a meal' : ' · canteen, no rate set yet') : '')+
+        (isPushed()?'':'. Press ⇧ Upload on the Cloud tab to send it.'), 5600);
 });
 $('#siteDel').addEventListener('click',()=>{
   const s=siteById(editSiteId); if(!s) return;
@@ -996,10 +1116,11 @@ function setupFor(sup){
   return {
     type:'attendance-crm-setup', v:1,
     issued:new Date().toISOString().slice(0,10),
-    std:CFG.std||30,
+    std:CFG.std||0,
     supervisor:{ id:sup.id, name:sup.name, state:sup.state||'', phone:sup.phone||'' },
     sites: sup.siteIds.map(i=>siteById(i)).filter(Boolean)
-      .map(s=>({ id:s.id, name:s.name, state:s.state||'', std:siteStd(s), operators:s.operators }))
+      .map(s=>({ id:s.id, name:s.name, state:s.state||'', std:sitePin(s),
+                 canteen:!!s.canteen, canteenRate:siteRate(s), operators:s.operators }))
   };
 }
 const setupName = sup => 'SETUP_'+sup.name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'')+'.json';
@@ -1020,10 +1141,57 @@ function renderIssue(){
     download(setupName(s), JSON.stringify(setupFor(s),null,1), 'application/json');
   }));
 }
-$('#stdVal').addEventListener('change',e=>{ const v=Math.round(+e.target.value||0);
-  if(v>0&&v<=31){ CFG.std=v; saveCfg(); renderAll();
-    toast('New sites will default to a '+v+' day month. Existing sites keep theirs — change one on the Sites tab.', 5200);
-  } else e.target.value=CFG.std||30; });
+/* ---------------------------------------------------- holidays panel */
+const MONTHNAMES = ['January','February','March','April','May','June','July',
+                    'August','September','October','November','December'];
+function renderHolidays(){
+  const el = $('#holTable'); if(!el) return;
+  const year = Math.round(+$('#holYear').value||0);
+  if(!(year>=2024 && year<=2099)){ el.innerHTML=''; return; }
+  const rows = holidaysOfYear(year).map(h=>{
+    const pretty = h.md ? (+h.md.slice(3,5))+' '+MONTHNAMES[+h.md.slice(0,2)-1] : '';
+    const state = !h.md
+      ? '<span class="tag none">not known — set it</span>'
+      : (h.edited ? '<span class="tag">changed by you</span>' : '<span class="muted">built in</span>');
+    return '<tr><td><b>'+esc(h.name)+'</b></td>'+
+      '<td><input type="text" data-hol="'+esc(h.key)+'" value="'+esc(h.md||'')+'" '+
+        'placeholder="MM-DD" style="max-width:110px"></td>'+
+      '<td>'+esc(pretty)+'</td><td>'+state+'</td></tr>';
+  }).join('');
+  el.innerHTML = '<table><thead><tr><th>Holiday</th><th>MM-DD</th><th>Falls on</th><th></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>';
+  el.querySelectorAll('[data-hol]').forEach(inp=>inp.addEventListener('change',()=>{
+    const v = trim(inp.value);
+    if(v && !/^\d{2}-\d{2}$/.test(v)){ toast('Write the date as MM-DD, e.g. 11-08 for 8 November'); return renderHolidays(); }
+    if(v){
+      const mm=+v.slice(0,2), dd=+v.slice(3,5);
+      if(!(mm>=1&&mm<=12&&dd>=1&&dd<=31)){ toast('That is not a real date'); return renderHolidays(); }
+    }
+    CFG.holidays = CFG.holidays || {};
+    CFG.holidays[String(year)] = CFG.holidays[String(year)] || {};
+    CFG.holidays[String(year)][inp.dataset.hol] = v;
+    saveCfg(); renderHolidays(); renderHdr();
+    toast(v ? 'Set — press ⇧ Upload on the Cloud tab to send it to the phones'
+            : 'Removed for '+year+' — press ⇧ Upload to send it', 5200);
+  }));
+}
+$('#holYear').value = new Date().getFullYear();
+$('#holYear').addEventListener('change', renderHolidays);
+$('#holReset').addEventListener('click', ()=>{
+  const year = String(Math.round(+$('#holYear').value||0));
+  if(!CFG.holidays || !CFG.holidays[year]) return toast('Nothing changed for '+year);
+  delete CFG.holidays[year];
+  saveCfg(); renderHolidays(); renderHdr();
+  toast(year+' put back to the built-in dates — press ⇧ Upload to send it', 5200);
+});
+
+$('#stdVal').addEventListener('change',e=>{
+  const raw=trim(e.target.value), v = raw==='' ? 0 : Math.round(+raw||0);
+  if(raw!=='' && !(v>0&&v<=31)) return void (e.target.value = CFG.std || '');
+  CFG.std=v; saveCfg(); renderAll();
+  toast(v ? 'New sites will be pinned to '+v+' days. Existing sites keep theirs — change one on the Sites tab.'
+          : 'New sites will run the real length of each month. Duty sites are still pinned at 26.', 5600);
+});
 $('#dlAll').addEventListener('click',()=>{
   const ready=CFG.supervisors.filter(s=>s.siteIds.length);
   if(!ready.length) return toast('No supervisor has sites assigned yet');
@@ -1196,8 +1364,10 @@ $('#apiPush').addEventListener('click', async ()=>{
   const made = ensureTokens();
   clog('<span class="dim">Uploading…</span>');
   try{
-    const d = await apiCall({ action:'adminPush', k:CFG.key, std:CFG.std||30,
-      sites: CFG.sites.map(s=>({ id:s.id, name:s.name, std:siteStd(s),
+    const d = await apiCall({ action:'adminPush', k:CFG.key, std:CFG.std||0,
+      holidays: CFG.holidays || {},
+      sites: CFG.sites.map(s=>({ id:s.id, name:s.name, std:sitePin(s),
+        canteen: !!s.canteen, canteenRate: siteRate(s),
         operators: s.operators.map(o=>({ key:opKey(o), code:o.code||'', name:o.name||'',
           father:o.father||'', account:o.account||'', ifsc:o.ifsc||'' })) })),
       supervisors: CFG.supervisors.map(s=>({ token:s.token, name:s.name,
@@ -1392,9 +1562,12 @@ $('#apiPull').addEventListener('click', async ()=>{
   clog('<span class="dim">Loading from the sheet…</span>');
   try{
     const d = await apiCall({action:'adminConfig', k:CFG.key});
-    CFG.std = d.std || 30;
+    CFG.std = +d.std > 0 ? +d.std : 0;
+    CFG.holidays = d.holidays || {};
     CFG.sites = (d.sites||[]).map(s=>({ id:s.id, name:s.name,
       std: (+s.std>0 && +s.std<=31) ? +s.std : stdForNewSite(s.name),
+      canteen: s.canteen === undefined ? canteenForNewSite(s.name) : !!s.canteen,
+      canteenRate: +s.canteenRate>0 ? +s.canteenRate : 0,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // supervisors come back keyed by token; give each one a local id again
     CFG.supervisors = (d.supervisors||[]).map(s=>({
@@ -1435,50 +1608,56 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
     const MONTHS=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
                   'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
     const label = MONTHS[+month.slice(5,7)-1]+'_'+month.slice(0,4);
-    const widths=[11,26,26,7,7,7,22,15];
-    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD','TOTAL OT','TOTAL AB','STATUS']];
+    const widths=[11,26,26,7,7,7,22,15,10];
+    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD','TOTAL OT','TOTAL AB','TOTAL CANTEEN','STATUS']];
     let grandFilled=0, grandOps=0;
 
     CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(site=>{
       const have = got.get(site.id) || new Map();
       const rows=[COLS.slice()];
-      let filled=0, tWd=0, tOt=0, tAb=0;
+      let filled=0, tWd=0, tOt=0, tAb=0, tCa=0;
       site.operators.forEach(op=>{
         const r = have.get(String(opKey(op)));
         const wd = r && r.wd!=null ? r.wd : null;
-        const ot = r && r.ot!=null ? r.ot : null;
+        // OT includes the national holidays he worked, exactly as the phone
+        // exports it. The split stays in the sheet's nh column for audit.
+        const ot = r && (r.ot!=null || r.nh!=null) ? (+r.ot||0)+(+r.nh||0) : null;
         const ab = r && r.ab!=null ? r.ab : null;
         // OT is typed separately now, so a man may have OT without WD
-        if(wd!=null || ot!=null) filled++;
-        tWd+=wd||0; tOt+=ot||0; tAb+=ab||0;
+        const ca = r && r.ca!=null ? r.ca : null;
+        if(wd!=null || ot!=null || ca!=null) filled++;
+        tWd+=wd||0; tOt+=ot||0; tAb+=ab||0; tCa+=ca||0;
         rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, ot, ab,
-                   {v:op.account||''}, {v:op.ifsc||''}]);
+                   {v:op.account||''}, {v:op.ifsc||''}, ca]);
       });
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
       have.forEach((r,k)=>{ if(known.has(k)) return;
-        if(r.wd!=null || r.ot!=null) filled++;
-        tWd+=r.wd||0; tOt+=r.ot||0; tAb+=r.ab||0;
-        rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, r.ot, r.ab,
-                   {v:r.account||''}, {v:r.ifsc||''}]); });
+        const ot = (r.ot!=null || r.nh!=null) ? (+r.ot||0)+(+r.nh||0) : null;
+        if(r.wd!=null || ot!=null || r.ca!=null) filled++;
+        tWd+=r.wd||0; tOt+=ot||0; tAb+=r.ab||0; tCa+=r.ca||0;
+        rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, ot, r.ab,
+                   {v:r.account||''}, {v:r.ifsc||''}, r.ca==null?null:r.ca]); });
 
       const total=rows.length-1;
       grandFilled+=filled; grandOps+=total;
       sheets.push({name:site.name, rows, widths});
       summary.push([site.name, supsOfSite(site.id).map(x=>x.name).join(', ')||'—',
                     total, filled, total-filled, tWd, tOt, tAb,
+                    site.canteen ? Math.round(tCa*100)/100 : null,
                     filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE')]);
     });
 
     summary.push([]);
-    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','']);
-    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,10,10,13]});
+    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','','']);
+    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,10,10,14,13]});
 
     download('ATTENDANCE_'+label+'.xlsx', buildXlsx(sheets),
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
-    const notStarted = summary.slice(1,-2).filter(r=>r[8]==='NOT STARTED');
-    const part       = summary.slice(1,-2).filter(r=>r[8]==='PART DONE');
+    // status moved to column 9 when TOTAL CANTEEN was added ahead of it
+    const notStarted = summary.slice(1,-2).filter(r=>r[9]==='NOT STARTED');
+    const part       = summary.slice(1,-2).filter(r=>r[9]==='PART DONE');
     const out=['<span class="ok">✓ '+cesc(label.replace('_',' '))+' downloaded</span>','',
       '   sites        '+CFG.sites.length,
       '   operators    '+grandOps,
@@ -1500,7 +1679,7 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
 {
   const n = backfillStd();
   if(n) setTimeout(()=>toast(n+' site(s) given a standard month length — '+
-    CFG.sites.filter(s=>siteStd(s)!==30).length+' of them shorter than 30. '+
+    CFG.sites.filter(s=>sitePin(s)).length+' of them pinned to a fixed number. '+
     'Press ⇧ Upload on the Cloud tab to send it.', 8000), 600);
 }
 renderAll();

@@ -75,6 +75,20 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 .card.barred .nm,.card.barred .meta{opacity:.6}
 .fault{margin-top:2px;padding:9px 10px;border-radius:9px;background:#fdeceb;
   color:var(--bad);font-size:12px;font-weight:600;line-height:1.4}
+.nhbar{display:flex;align-items:center;gap:8px;margin-top:8px;padding:7px 10px;
+  border-radius:9px;font-size:12px;font-weight:600;line-height:1.35}
+.nhbar span{flex:1}
+.nhbar button{flex:none;border:1px solid currentColor;background:#fff;color:inherit;
+  border-radius:7px;padding:5px 10px;font:inherit;font-weight:700;cursor:pointer}
+.nhbar.on{background:#eaf2fe;color:#1b4b8f}
+.nhbar.off{background:#f4f5f7;color:#5c6470}
+.tabs{display:flex;gap:6px;margin-bottom:10px;background:#eef0f4;padding:4px;border-radius:11px}
+.tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:9px 6px;
+  font:inherit;font-weight:700;font-size:14px;color:#5c6470;cursor:pointer}
+.tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.inp.amt input{font-weight:700}
+.ratenote{margin-top:8px;padding:9px 10px;border-radius:9px;background:#fff6e5;
+  color:#8a5a00;font-size:12px;font-weight:600;line-height:1.4}
 .card.warn{border-color:#f0d9a8}
 .chead{display:flex;align-items:baseline;gap:8px}
 .code{font-size:11px;font-weight:700;background:var(--brand-l);color:var(--brand);padding:2px 7px;border-radius:6px;letter-spacing:.4px;flex:0 0 auto}
@@ -166,6 +180,11 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 </div>
 
 <div class="controls">
+  <!-- only shown when this supervisor has a site that runs a canteen -->
+  <div class="tabs" id="tabs" style="display:none">
+    <button data-tab="att" class="on">Attendance</button>
+    <button data-tab="canteen">Canteen</button>
+  </div>
   <div class="row">
     <div class="field"><label>Site</label><select id="selSite"></select></div>
     <div class="field" style="flex:0 0 140px"><label>Month</label><input type="month" id="selMonth"></div>
@@ -257,8 +276,9 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     Extra days go in the <b>OT</b> box, never into WD — a day must not count as
     both worked and overtime. AB is calculated, not editable.
   </div>
-  <div class="form"><div class="field"><label>Standard days for <b id="stdSite">this site</b></label><input type="number" id="stdVal" inputmode="numeric" min="1" max="31"></div></div>
-  <div class="note">This is the site's own month length — 26 on a duty site, 30 elsewhere.
+  <div class="form"><div class="field"><label>Standard days for <b id="stdSite">this site</b></label><input type="number" id="stdVal" inputmode="numeric" min="0" max="31" placeholder="blank = length of the month"></div></div>
+  <div class="note">Leave it <b>blank</b> and the site runs the real length of each month —
+    28 in February, 31 in August. Put a number in to fix it, as the 26-day duty sites are.
     It belongs to head office: when they next send an update, theirs wins.</div>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="stdSave">Save &amp; recalculate</button></div>
 </div>
@@ -564,10 +584,56 @@ function prune(k){
   const e = DB.entries[k]; if(!e) return;
   if(e.ot==null) delete e.otM;                      // manual flags only live with a value
   if(e.ab==null) delete e.abM;
-  if(e.wd==null && e.ot==null && e.ab==null) delete DB.entries[k];
+  // canteen counts as something worth keeping: a man may have canteen and no
+  // attendance yet, and dropping the row here would lose it as he typed it
+  if(e.wd==null && e.ot==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
 }
+/* What the man is actually paid overtime for: what the supervisor typed, plus
+   the national holidays he worked. Kept in one place so the screen, the export
+   and the sheet can never drift apart. */
+const totalOt = e => (+e.ot||0) + (+e.nh||0);
+
+/* ---- canteen ------------------------------------------------------------
+   Only some sites run a canteen, and a supervisor only ever sees his own, so
+   the tab appears only where both are true. Per man he types how many meals
+   he took; the site's rate turns that into money. He may type the amount
+   instead, and that overrides the rate until he clears the box again —
+   e.caM is that decision, kept so a rate change cannot silently rewrite it. */
+const canteenSites = () => DB.sites.filter(s=>s.canteen);
+const canteenOn = () => canteenSites().length > 0;
+function canteenRate(site){
+  const s = typeof site === 'string' ? DB.sites.find(x=>x.id===site) : site;
+  const v = s ? +s.canteenRate : 0;
+  return (v>0 && isFinite(v)) ? v : 0;
+}
+const money = n => Math.round((+n||0)*100)/100;
+/** Works the amount out from the count, unless he typed one himself. */
+function deriveCanteen(siteId, ym, key){
+  const k = ekey(siteId,ym,key), e = DB.entries[k]; if(!e) return {};
+  const rate = canteenRate(siteId);
+  if(e.ca == null) delete e.caM;                   // no amount left to protect
+  if(!e.caM){
+    if(e.cq != null && rate>0) e.ca = money(e.cq * rate);
+    else delete e.ca;
+  }
+  if(e.cq == null && e.ca == null){ delete e.cq; delete e.ca; delete e.caM; }
+  if(e.wd==null && e.ot==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
+  save();
+  return DB.entries[k] || {};
+}
+const inCanteen = () => DB.ui.tab === 'canteen';
 function curSite(){ return DB.sites.find(s=>s.id===DB.ui.site) || DB.sites[0] || null; }
-function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); }
+/* Attendance is filled in AFTER the month has ended, so the month the app opens
+   on is last month, not this one. Built from the local date parts rather than an
+   ISO string, because toISOString() is UTC and would roll the wrong way for the
+   first few hours of the 1st in India. new Date(y, m-1, 1) handles January on
+   its own: it steps back into December of the year before. */
+function prevMonth(from){
+  const t = from || new Date();
+  const p = new Date(t.getFullYear(), t.getMonth() - 1, 1);
+  return p.getFullYear() + '-' + String(p.getMonth() + 1).padStart(2, '0');
+}
+function curMonth(){ return DB.ui.month || prevMonth(); }
 
 /* ---- WD and OT are typed, AB is worked out -----------------------------
    The standard month belongs to the SITE, not to the phone: most sites are
@@ -579,16 +645,79 @@ function curMonth(){ return DB.ui.month || new Date().toISOString().slice(0,7); 
    WD can never exceed the standard — extra days belong in OT, and letting a
    day count as both worked and overtime is how payroll goes wrong. OT is
    whatever the supervisor typed and is never touched. */
-function defaultStd(){ const v = +(DB.settings && DB.settings.std); return v>0 ? v : 30; }
-function stdDays(site){
+/* ---- national holidays -------------------------------------------------
+   Three fixed days, plus Holi and Diwali, which move with the Hindu
+   lunisolar calendar and cannot be worked out from the Gregorian date.
+   Holi is Rangwali Holi / Dhulandi, the day of colours — not Holika Dahan
+   the night before. Diwali is Lakshmi Puja, the main day of the five.
+
+   Only the years that could be verified against agreeing sources are here.
+   From 2032 the almanacs disagree by about a month over where a leap month
+   falls, so those years are left out on purpose: the app says it does not
+   know rather than using a date that might be wrong by weeks. Head office
+   fills them in from the console, and a console entry always wins.
+
+   The same table lives in Code.gs and admin.html. Change one, change all. */
+const FIXED_HOLIDAYS = [
+  { md:'01-26', key:'Republic Day',     name:'Republic Day' },
+  { md:'08-15', key:'Independence Day', name:'Independence Day' },
+  { md:'10-02', key:'Gandhi Jayanti',   name:'Gandhi Jayanti' }
+];
+const LUNAR_HOLIDAYS = {
+  2026:{holi:'03-04', diwali:'11-08'},
+  2027:{holi:'03-22', diwali:'10-29'},
+  2028:{holi:'03-11', diwali:'10-17'},
+  2029:{holi:'03-01', diwali:'11-05'},
+  2030:{holi:'03-20', diwali:'10-26'},
+  2031:{holi:'03-09', diwali:'11-14'}
+};
+/** [{date:'YYYY-MM-DD', name:'…'}] for one 'YYYY-MM'. */
+function holidaysIn(ym){
+  if(!/^\d{4}-\d{2}$/.test(ym||'')) return [];
+  const year = ym.slice(0,4), mm = ym.slice(5,7);
+  const over = (DB.holidayOverrides||{})[year] || {};
+  const out = [];
+  for(const h of FIXED_HOLIDAYS){
+    const md = over[h.key] !== undefined ? over[h.key] : h.md;
+    if(md && String(md).slice(0,2)===mm) out.push({date:year+'-'+md, name:h.name});
+  }
+  const lunar = LUNAR_HOLIDAYS[year] || {};
+  for(const [k,label] of [['holi','Holi'],['diwali','Diwali']]){
+    const md = over[k] !== undefined ? over[k] : lunar[k];
+    if(md && String(md).slice(0,2)===mm) out.push({date:year+'-'+md, name:label});
+  }
+  return out.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+}
+const holidayCount = ym => holidaysIn(ym).length;
+function holidayLabel(ym){
+  const h = holidaysIn(ym);
+  if(!h.length) return '';
+  return h.map(x=>x.name+' '+(+x.date.slice(8,10))).join(' · ');
+}
+
+/* How many days the calendar actually gives a month. 'YYYY-MM' -> 28..31. */
+function daysInMonth(ym){
+  if(!/^\d{4}-\d{2}$/.test(ym||'')) return 30;
+  return new Date(+ym.slice(0,4), +ym.slice(5,7), 0).getDate();
+}
+/* The standard for a site in a month. Most sites simply run the real length of
+   the month — 28 in February, 31 in August. The 26-day duty sites, and any
+   other site head office has pinned, keep their fixed number whatever the
+   month is. site.std is that pin; 0 or missing means follow the calendar. */
+function stdDays(site, ym){
   const s = site === undefined ? curSite()
           : (typeof site === 'string' ? DB.sites.find(x=>x.id===site) : site);
   const v = s ? +s.std : 0;
-  return (v>0 && v<=31) ? v : defaultStd();
+  return (v>0 && v<=31) ? v : daysInMonth(ym || curMonth());
 }
+const stdPinned = site => {
+  const s = typeof site === 'string' ? DB.sites.find(x=>x.id===site) : site;
+  const v = s ? +s.std : 0;
+  return (v>0 && v<=31) ? v : 0;
+};
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
-  const std = stdDays(siteId);
+  const std = stdDays(siteId, ym);      // the month matters: February is 28
   delete e.otM; delete e.abM;                       // legacy flags — no manual AB any more
   // Hard ceiling. A WD over the standard is not thrown away — those days are
   // overtime, so they move into OT. This is what carries a site from a 30-day
@@ -600,6 +729,18 @@ function derive(siteId, ym, code){
   if(e.wd == null) delete e.ab;
   else if(e.wd < std) e.ab = std - e.wd;
   else delete e.ab;
+
+  /* National holidays. A man whose WD is the full standard was present every
+     day of the month, the holiday included, so he is given one overtime day
+     per holiday. It is held apart from the typed OT — never added into it —
+     because folding it in would double-count the moment a supervisor typed
+     the holiday himself, and would compound again every time this runs.
+     e.nhOff is the supervisor saying this man was off that day. */
+  const hol = holidayCount(ym);
+  if(hol && e.wd != null && e.wd >= std && !e.nhOff) e.nh = hol;
+  else delete e.nh;
+  if(!hol || e.wd == null || e.wd < std) delete e.nhOff;   // nothing left to turn off
+
   prune(k); save();
   return DB.entries[k] || {};
 }
@@ -614,7 +755,7 @@ function deriveAll(sendChanges){
     const [s,m,c] = k.split('|'); derive(s,m,c);
     if(JSON.stringify(DB.entries[k]||{}) !== before){
       n++;
-      if(sendChanges && m===ym) queue(s, c);
+      if(sendChanges) queue(s, c, m);   // each against its own month
     }
   }
   save(); return n;
@@ -633,19 +774,30 @@ $$('[data-close]').forEach(b=>b.addEventListener('click', hide));
 /* ----------------------------------------------------------- rendering */
 function renderSites(){
   const sel=$('#selSite'), fsel=$('#fSite');
-  if(!DB.ui.site || !DB.sites.some(s=>s.id===DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
-  const opts = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+' ('+s.operators.length+')</option>').join('');
+  // in the Canteen tab only the sites that actually run one are offered
+  const list = inCanteen() ? canteenSites() : DB.sites;
+  if(!DB.ui.site || !list.some(s=>s.id===DB.ui.site)) DB.ui.site = list[0] ? list[0].id : null;
+  const opts = list.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+' ('+s.operators.length+')</option>').join('');
   sel.innerHTML = opts || '<option value="">— no sites yet —</option>';
   fsel.innerHTML = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+'</option>').join('');
   if(DB.ui.site){ sel.value=DB.ui.site; fsel.value=DB.ui.site; }
 }
+function renderTabs(){
+  const bar = $('#tabs');
+  const show = canteenOn();
+  bar.style.display = show ? '' : 'none';
+  if(!show && inCanteen()) DB.ui.tab = 'att';        // his last canteen site was taken away
+  bar.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.tab === (DB.ui.tab||'att')));
+}
 function render(){
+  renderTabs();
   renderSites();
   $('#selMonth').value = curMonth();
+  if(inCanteen()) return renderCanteen();
   const site = curSite(), ym = curMonth(), list=$('#list'), q = norm($('#q').value);
   $('#barTitle').textContent = DB.supervisor ? DB.supervisor.name : 'Attendance CRM';
   $('#barSub').textContent = site
-    ? site.name + ' · ' + monthLabel(ym) + ' · ' + stdDays(site) + ' day month'
+    ? site.name + ' · ' + monthLabel(ym) + ' · ' + stdDays(site, ym) + ' day month'
     : 'Working Days · Overtime · Absent';
 
   if(!site){
@@ -664,7 +816,7 @@ function render(){
       : 'Open the menu (☰) and load the setup file head office sent you.')+'</div>';
     return;
   }
-  const std = stdDays(site);
+  const std = stdDays(site, ym);
   // Two rules head office set: every man needs an EMP Code, and no code may be
   // shared. A man who breaks either cannot be paid against, so he is shown but
   // locked — better a visible complaint than attendance filed against nobody.
@@ -677,14 +829,15 @@ function render(){
         ? 'EMP Code '+op.code+' is given to more than one man. Tell head office.'
         : '';
 
-  let filled=0, tWd=0, tOt=0, tAb=0, html='', shown=0, blocked=0, payable=0;
+  const hols = holidaysIn(ym);
+  let filled=0, tWd=0, tOt=0, tAb=0, tNh=0, html='', shown=0, blocked=0, payable=0;
   for(const op of site.operators){
     const fault = faultOf(op);
     if(fault) blocked++; else payable++;
     const e = getEntry(site.id, ym, opKey(op));
     const has = e.wd!=null || e.ot!=null || e.ab!=null;
     if(has && !fault) filled++;
-    if(!fault){ tWd += (+e.wd||0); tOt += (+e.ot||0); tAb += (+e.ab||0); }
+    if(!fault){ tWd += (+e.wd||0); tOt += totalOt(e); tAb += (+e.ab||0); tNh += (+e.nh||0); }
     if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
               norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
     shown++;
@@ -699,7 +852,7 @@ function render(){
       (fault?'':'<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button>')+'</div>'+
       '<div class="meta">'+(meta||'—')+'</div>'+
       (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
-             : '<div class="inputs">'+ fld(e, std) +'</div>')+'</div>';
+             : '<div class="inputs">'+ fld(e, std) +'</div>' + nhBar(e, hols))+'</div>';
   }
   $('#chips').innerHTML =
     '<span class="chip">Operators <b>'+payable+'</b></span>'+
@@ -708,11 +861,95 @@ function render(){
     '<span class="chip g">Total WD <b>'+tWd+'</b></span>'+
     '<span class="chip b">Total OT <b>'+tOt+'</b></span>'+
     '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
-    '<span class="chip'+(std!==30?' b':'')+'">Standard month <b>'+std+'</b></span>';
+    '<span class="chip'+(std!==30?' b':'')+'">Standard month <b>'+std+'</b></span>'+
+    (hols.length ? '<span class="chip b" title="'+xmlEsc(holidayLabel(ym))+'">'+
+        xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b></span>' : '');
 
   list.innerHTML = html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
     (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>';
 }
+/* ------------------------------------------------------------- canteen view
+   Same list of men, different two boxes. Barred men are barred here too: a man
+   with no EMP Code cannot be paid, so he cannot be deducted from either. */
+function renderCanteen(){
+  const site = curSite(), ym = curMonth(), list = $('#list'), q = norm($('#q').value);
+  $('#barTitle').textContent = DB.supervisor ? DB.supervisor.name : 'Attendance CRM';
+  const rate = canteenRate(site);
+  $('#barSub').textContent = site
+    ? site.name + ' · ' + monthLabel(ym) + ' · canteen' + (rate ? ' ₹'+rate+' each' : '')
+    : 'Canteen';
+
+  if(!site){
+    $('#chips').innerHTML='';
+    list.innerHTML = '<div class="empty"><b>No canteen site</b>None of your sites runs a canteen. '+
+      'If that is wrong, tell head office.</div>';
+    return;
+  }
+
+  const codeCount = {};
+  DB.sites.forEach(s => s.operators.forEach(o => {
+    if(o.code) codeCount[o.code] = (codeCount[o.code]||0) + 1; }));
+  const faultOf = op => !op.code ? 'No EMP Code — tell head office.'
+    : codeCount[op.code] > 1 ? 'EMP Code '+op.code+' is given to more than one man.' : '';
+
+  let filled=0, tQty=0, tAmt=0, html='', payable=0, blocked=0;
+  for(const op of site.operators){
+    const fault = faultOf(op);
+    if(fault){ blocked++; } else payable++;
+    const e = getEntry(site.id, ym, opKey(op));
+    const has = e.cq!=null || e.ca!=null;
+    if(has && !fault) filled++;
+    if(!fault){ tQty += (+e.cq||0); tAmt += (+e.ca||0); }
+    if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
+              norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
+    html += '<div class="card '+(fault?'barred':(has?'done':''))+'" data-key="'+xmlEsc(opKey(op))+'">'+
+      '<div class="chead"><span class="code'+(op.code?'':' nocode')+'">'+xmlEsc(op.code||'NO CODE')+'</span>'+
+      '<span class="nm">'+xmlEsc(op.name||'(no name)')+'</span></div>'+
+      '<div class="meta">'+(op.father?xmlEsc(op.father):'—')+'</div>'+
+      (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
+             : '<div class="inputs">'+ cfld(e, rate) +'</div>')+'</div>';
+  }
+
+  $('#chips').innerHTML =
+    '<span class="chip">Operators <b>'+payable+'</b></span>'+
+    (blocked?'<span class="chip r">Blocked <b>'+blocked+'</b></span>':'')+
+    '<span class="chip">Filled <b>'+filled+'/'+payable+'</b></span>'+
+    '<span class="chip g">Total meals <b>'+tQty+'</b></span>'+
+    '<span class="chip b">Total ₹ <b>'+money(tAmt)+'</b></span>'+
+    (rate ? '<span class="chip">Rate <b>₹'+rate+'</b></span>'
+          : '<span class="chip r">No rate set</span>');
+
+  list.innerHTML = (rate ? '' :
+      '<div class="ratenote">Head office has not set a canteen rate for this site, so the amount '+
+      'cannot be worked out from the count. You can still type the amount yourself.</div>') +
+    (html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b></div>');
+}
+/* Count is typed; amount follows the rate unless he types over it. */
+function cfld(e, rate){
+  const auto = e.ca!=null && !e.caM;
+  return '<div class="inp wd"><label>MEALS</label>'+
+      '<input type="number" inputmode="numeric" min="0" max="999" step="1" data-f="cq" placeholder="–" value="'+(e.cq==null?'':e.cq)+'"></div>'+
+    '<div class="inp amt" style="flex:1.4"><label>AMOUNT ₹'+(auto?' <i>auto</i>':(e.caM?' <i>typed</i>':''))+'</label>'+
+      '<input type="number" inputmode="decimal" min="0" step="1" data-f="ca" placeholder="'+(rate?'–':'type it')+'" value="'+(e.ca==null?'':e.ca)+'"></div>';
+}
+
+/* The holiday line under a card. Only ever shown when the month HAS a national
+   holiday and the man's WD is full, because that is the only case where the
+   rule gives him anything. It is his to refuse: a man who was off that day is
+   turned off with one tap, and turned back on with another. */
+function nhBar(e, hols){
+  if(!hols.length) return '';
+  if(e.wd == null) return '';
+  const on = (+e.nh||0) > 0;
+  if(!on && !e.nhOff) return '';                 // WD not full — the rule does not apply
+  const names = hols.map(h=>h.name).join(' · ');
+  return on
+    ? '<div class="nhbar on"><span>+'+e.nh+' OT · worked '+xmlEsc(names)+'</span>'+
+        '<button data-nh="off">He was off</button></div>'
+    : '<div class="nhbar off"><span>No holiday OT · '+xmlEsc(names)+'</span>'+
+        '<button data-nh="on">He worked it</button></div>';
+}
+
 /* WD is the only editable field. OT and AB are read-only result boxes. */
 function fld(e, std){
   if(!(std>0)) std = stdDays();
@@ -725,11 +962,51 @@ function fld(e, std){
 }
 
 /* -------------------------------------------------------------- events */
+$('#tabs').addEventListener('click', e=>{
+  const b = e.target.closest('button[data-tab]'); if(!b) return;
+  DB.ui.tab = b.dataset.tab;
+  // each tab remembers its own site, so switching to Canteen does not strand him
+  // on a site that has none, and switching back does not lose where he was
+  const keep = DB.ui.site;
+  DB.ui.site = (DB.ui.tab==='canteen' ? DB.ui.canteenSite : DB.ui.attSite) || keep;
+  if(DB.ui.tab==='canteen') DB.ui.attSite = keep; else DB.ui.canteenSite = keep;
+  save(); render();
+});
 $('#selSite').addEventListener('change', e=>{ DB.ui.site=e.target.value; save(); render(); });
 $('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); render(); if(cloudOn()) cloudBootstrap(true); });
 $('#q').addEventListener('input', render);
 
 $('#list').addEventListener('input', e=>{
+  const cinp = e.target.closest('input[data-f="cq"], input[data-f="ca"]');
+  if(cinp){
+    const field = cinp.dataset.f;
+    const card = e.target.closest('.card'), key = card.dataset.key;
+    const site = curSite().id, ym = curMonth();
+    let v = cinp.value.trim();
+    if(v!==''){
+      const n = field==='cq' ? Math.max(0, Math.round(+v||0)) : Math.max(0, money(+v||0));
+      if(String(n)!==v && isFinite(+v)) cinp.value = n;
+      v = n;
+    }
+    setEntry(site, ym, key, field, v===''?'':v);
+    // typing in the amount box is him overruling the rate; emptying it hands it back
+    if(field==='ca'){
+      const k = ekey(site,ym,key), ent = DB.entries[k];
+      if(ent){ if(v==='') delete ent.caM; else ent.caM = 1; }
+    }
+    const ent = deriveCanteen(site, ym, key);
+    // the amount box is the one the rate writes into, so refresh it unless he is in it
+    if(field==='cq'){
+      const box = card.querySelector('input[data-f="ca"]');
+      if(box) box.value = ent.ca==null ? '' : ent.ca;
+      const lab = card.querySelector('.inp.amt label');
+      if(lab) lab.innerHTML = 'AMOUNT ₹'+(ent.ca!=null && !ent.caM ? ' <i>auto</i>' : (ent.caM?' <i>typed</i>':''));
+    }
+    card.classList.toggle('done', ent.cq!=null || ent.ca!=null);
+    updateCanteenChips();
+    queue(site, key, ym);
+    return;
+  }
   const inp = e.target.closest('input[data-f="wd"], input[data-f="ot"]'); if(!inp) return;
   const fieldName = inp.dataset.f;                        // WD and OT are both typed now
   const card = e.target.closest('.card'), code = card.dataset.key;
@@ -752,24 +1029,57 @@ $('#list').addEventListener('input', e=>{
   box.textContent = ent.ab==null ? '–' : ent.ab;
   box.classList.toggle('set', ent.ab!=null);
   card.classList.toggle('done', ent.wd!=null);
+  // Crossing the full-WD line turns the holiday line on or off. Patch just this
+  // card rather than re-rendering the list — a full render would take the
+  // keyboard away from the box he is still typing in.
+  const want = nhBar(ent, holidaysIn(ym));
+  const bar = card.querySelector('.nhbar');
+  if(bar && !want) bar.remove();
+  else if(bar) bar.outerHTML = want;
+  else if(want) card.insertAdjacentHTML('beforeend', want);
   updateChips();
-  queue(site, code);
+  queue(site, code, ym);
 });
 $('#list').addEventListener('click', e=>{
+  const nh = e.target.closest('[data-nh]');
+  if(nh){
+    const card = nh.closest('.card'), key = card.dataset.key;
+    const site = curSite().id, ym = curMonth();
+    const k = ekey(site, ym, key), ent = DB.entries[k];
+    if(!ent) return;
+    if(nh.dataset.nh === 'off') ent.nhOff = 1; else delete ent.nhOff;
+    save(); derive(site, ym, key); queue(site, key, ym); render();
+    return;
+  }
   const b = e.target.closest('[data-edit]'); if(!b) return;
   openOp(b.dataset.edit);
 });
+function updateCanteenChips(){
+  const site=curSite(), ym=curMonth(); if(!site) return;
+  let filled=0,tQty=0,tAmt=0;
+  for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
+    if(e.cq!=null||e.ca!=null) filled++;
+    tQty+=(+e.cq||0); tAmt+=(+e.ca||0); }
+  const c=$('#chips').children;
+  for(const el of c){
+    if(/^Filled/.test(el.textContent))      el.innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
+    else if(/^Total meals/.test(el.textContent)) el.innerHTML='Total meals <b>'+tQty+'</b>';
+    else if(/^Total ₹/.test(el.textContent))     el.innerHTML='Total ₹ <b>'+money(tAmt)+'</b>';
+  }
+}
 function updateChips(){
   const site=curSite(), ym=curMonth(); if(!site) return;
-  let filled=0,tWd=0,tOt=0,tAb=0;
+  let filled=0,tWd=0,tOt=0,tAb=0,tNh=0;
   for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
     if(e.wd!=null||e.ot!=null||e.ab!=null) filled++;
-    tWd+=(+e.wd||0); tOt+=(+e.ot||0); tAb+=(+e.ab||0); }
+    tWd+=(+e.wd||0); tOt+=totalOt(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0); }
   const c=$('#chips').children;
   if(c.length>=5){
     c[1].innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
     c[2].innerHTML='Total WD <b>'+tWd+'</b>'; c[3].innerHTML='Total OT <b>'+tOt+'</b>'; c[4].innerHTML='Total AB <b>'+tAb+'</b>';
   }
+  const hc = $('#chips').querySelector('.chip[title]');
+  if(hc) hc.innerHTML = xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b>';
 }
 
 /* menu */
@@ -777,7 +1087,8 @@ $('#btnMenu').addEventListener('click', ()=>{
   const nOps = DB.sites.reduce((a,s)=>a+s.operators.length,0);
   $('#editsiteSub').textContent = curSite() ? curSite().name : 'No site selected';
   $('#stdSub').textContent = curSite()
-    ? stdDays()+' days on '+curSite().name+' — AB is worked out from it'
+    ? stdDays()+' days on '+curSite().name+
+      (stdPinned(curSite()) ? ' — fixed' : ' — the length of the month')
     : 'AB is worked out from it';
   $('#setupSub').textContent = DB.supervisor
     ? 'Loaded for '+DB.supervisor.name+(DB.supervisor.state?' · '+DB.supervisor.state:'')
@@ -803,7 +1114,7 @@ $('#shMenu').addEventListener('click', e=>{
     else if(act==='fill'){ if(!curSite()) return toast('Add a site first'); $('#fillVal').value=stdDays(); show('#shFill'); }
     else if(act==='std'){
       if(!curSite()) return toast('Add a site first');
-      $('#stdVal').value=stdDays();
+      $('#stdVal').value = stdPinned(curSite()) || '';   // blank = follow the month
       $('#stdSite').textContent = curSite().name;
       show('#shStd');
     }
@@ -908,13 +1219,15 @@ $('#selSite').addEventListener('dblclick', ()=>{ if(curSite()) openSite(curSite(
 /* standard month length — of the current site */
 $('#stdSave').addEventListener('click', ()=>{
   const site = curSite(); if(!site) return toast('Add a site first');
-  const v = Math.round(+$('#stdVal').value||0);
-  if(!(v>0 && v<=31)) return toast('Enter a number between 1 and 31');
+  const raw = trim($('#stdVal').value);
+  const v = raw==='' ? 0 : Math.round(+raw||0);
+  if(raw!=='' && !(v>0 && v<=31)) return toast('Enter 1 to 31, or leave it blank for the length of the month');
   site.std = v; save();
   const n = deriveAll(true);
   // WD now over the ceiling has been capped; the days it lost are overtime
   hide(); render();
-  toast(site.name+' set to a '+v+' day month · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4600);
+  toast(site.name+(v ? ' fixed at '+v+' days' : ' now runs the length of each month')+
+        ' · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4600);
 });
 
 /* quick fill */
@@ -923,7 +1236,7 @@ $('#fillRun').addEventListener('click', ()=>{
   const site=curSite(), ym=curMonth(); let n=0;
   for(const op of site.operators){
     const k=opKey(op), e=getEntry(site.id,ym,k);
-    if(e.wd==null && e.ot==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); queue(site.id,k); n++; }
+    if(e.wd==null && e.ot==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); queue(site.id,k,ym); n++; }
   }
   hide(); render(); toast(n+' operator'+(n===1?'':'s')+' set to WD '+v);
 });
@@ -958,7 +1271,9 @@ $('#setupRun').addEventListener('click', async ()=>{
       }
       const std = +s.std;
       return { id:s.id, name:cleanSiteName(s.name),
-               std: (std>0 && std<=31) ? std : undefined, operators:ops };
+               std: (std>0 && std<=31) ? std : 0,      // 0 = follow the calendar month
+               canteen: !!s.canteen, canteenRate: +s.canteenRate>0 ? +s.canteenRate : 0,
+               operators:ops };
     });
     added = sites.reduce((a,s)=>a+s.operators.length,0);
 
@@ -1038,11 +1353,21 @@ async function cloudBootstrap(silent){
     DB.supervisor = d.supervisor || null;
     DB.locked = true;
     if(d.std) DB.settings = Object.assign({}, DB.settings, {std:d.std});
+    // head office's corrections to the holiday calendar, so other months come
+    // out right on this phone too, with or without signal
+    if(d.holidayOverrides) DB.holidayOverrides = d.holidayOverrides;
 
     const keep = new Set(d.sites.map(s=>s.id));
+    // a site head office has now assigned is no longer refused, so whatever is
+    // still queued for it will go up on the next flush
+    DB.refusedSites = (DB.refusedSites||[]).filter(id=>!keep.has(id));
     // the site's own month length comes down with it — 26 on a duty site
     DB.sites = d.sites.map(s=>({ id:s.id, name:cleanSiteName(s.name),
-      std: (+s.std>0 && +s.std<=31) ? +s.std : undefined,
+      // Keep the PIN, not the standard the server resolved for the month it was
+      // asked about — storing that would freeze this phone on whichever month it
+      // happened to load in, and February would still show 31.
+      std: (+s.stdFixed>0 && +s.stdFixed<=31) ? +s.stdFixed : 0,
+      canteen: !!s.canteen, canteenRate: +s.canteenRate>0 ? +s.canteenRate : 0,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // drop anything for sites he no longer holds
     for(const k of Object.keys(DB.entries)) if(!keep.has(k.split('|')[0])) delete DB.entries[k];
@@ -1052,11 +1377,18 @@ async function cloudBootstrap(silent){
     for(const k of Object.keys(DB.entries)){ const p=k.split('|'); if(p[1]===ym) mine[p[0]+'|'+p[2]]=k; }
     for(const [sk, val] of Object.entries(d.entries||{})){
       const [site, key] = sk.split('|');
-      if(DB.pending && DB.pending[site+'|'+key]) continue;      // local edit not yet sent — keep it
+      if(DB.pending && DB.pending[ym+'|'+site+'|'+key]) continue;   // local edit not yet sent — keep it
       const k = site+'|'+ym+'|'+key;
       DB.entries[k] = { wd: val.wd };
       if(val.ot != null) DB.entries[k].ot = val.ot;             // OT is typed, so it comes back too
+      // the sheet remembers a man turned off for the holiday; without this the
+      // rule would hand it straight back to him on every reload
+      if(val.wd != null && val.nh === 0) DB.entries[k].nhOff = 1;
+      if(val.cq != null) DB.entries[k].cq = val.cq;
+      if(val.ca != null) DB.entries[k].ca = val.ca;
+      if(val.caM) DB.entries[k].caM = 1;
       derive(site, ym, key);
+      deriveCanteen(site, ym, key);
     }
     if(!keep.has(DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
     lastPull = Date.now();          // a manual reload resets the throttle too
@@ -1080,30 +1412,75 @@ async function cloudBootstrap(silent){
 
 /* Queue one operator and push soon. */
 let flushT=null, retryMs=4000;
-function queue(site, key){
+/* The month is part of the key. It used to be assumed to be whatever month the
+   screen was showing when the queue was flushed — so a value typed in one month
+   and sent while another was on screen was filed against the wrong month. Now
+   that the app opens on last month by itself, that would have happened by
+   accident on every restart. */
+function queue(site, key, ym){
   if(!cloudOn()) return;
   DB.pending = DB.pending || {};
-  DB.pending[site+'|'+key] = 1;
+  DB.pending[(ym || curMonth())+'|'+site+'|'+key] = 1;
   save(); setSync('busy','Saving…');
   clearTimeout(flushT); flushT = setTimeout(flush, 900);
 }
 let flushing=false;
-async function flush(){
+/* The server stores only the sites this token holds and names back the ones it
+   would not take. Anything refused stays on the phone and is said out loud —
+   clearing the queue on a green Saved while the sheet stored nothing is how
+   a month's attendance disappears without anybody noticing.
+
+   Refused sites are remembered so the 30-second timer does not retry a site
+   head office has not assigned, for ever. Tapping the sync chip forces one. */
+async function flush(force){
   if(!cloudOn() || flushing) return;
-  const keys = Object.keys(DB.pending||{});
-  if(!keys.length){ setSync('ok','Saved'); return; }
+  const blocked = new Set(DB.refusedSites||[]);
+  const all = Object.keys(DB.pending||{});
+  if(!all.length){ setSync('ok','Saved'); return; }
+  const keys = force ? all : all.filter(k=>!blocked.has(k.split('|')[1]));
+  if(!keys.length){ setSync('bad', all.length+' refused'); return; }
+
+  // one request per month: each entry goes up against the month it was typed in,
+  // never against whatever happens to be on screen now
+  const byMonth = {};
+  keys.forEach(k=>{ const ym = k.split('|')[0]; (byMonth[ym] = byMonth[ym] || []).push(k); });
+
   flushing = true; setSync('busy','Saving…');
-  const ym = curMonth();
-  const rows = keys.map(k=>{
-    const [site, key] = k.split('|');
-    const e = getEntry(site, ym, key);
-    return { site, key, wd: e.wd==null ? null : e.wd, ot: e.ot==null ? null : e.ot };
-  });
   try{
-    const d = await apiPost({action:'save', s:DB.token, month:ym, rows});
-    if(!d.ok) throw new Error(d.error||'refused');
-    keys.forEach(k=>delete DB.pending[k]);
-    save(); retryMs = 4000; showPending();
+    const refused = new Set();
+    let held = 0;
+    for(const ym of Object.keys(byMonth)){
+      const mine = byMonth[ym];
+      const rows = mine.map(k=>{
+        const [, site, key] = k.split('|');
+        const e = getEntry(site, ym, key);
+        // nh is sent explicitly so the supervisor's "he was off" decision survives;
+        // without it the server would apply the default rule and give it straight back
+        return { site, key, wd: e.wd==null ? null : e.wd, ot: e.ot==null ? null : e.ot,
+                 nh: e.nh==null ? 0 : e.nh,
+                 cq: e.cq==null ? null : e.cq, ca: e.ca==null ? null : e.ca,
+                 caM: e.caM ? 1 : 0 };
+      });
+      const d = await apiPost({action:'save', s:DB.token, month:ym, rows});
+      if(!d.ok) throw new Error(d.error||'refused');
+      (d.refused||[]).forEach(id=>refused.add(id));
+      mine.forEach(k=>{
+        if(refused.has(k.split('|')[1])){ held++; return; }   // keep it — it was not stored
+        delete DB.pending[k];
+      });
+    }
+    DB.refusedSites = [...refused];
+    save(); retryMs = 4000;
+
+    if(held){
+      const names = [...refused].map(id=>{
+        const s = DB.sites.find(x=>x.id===id); return s ? s.name : id; });
+      setSync('bad', held+' refused');
+      toast('Head office has not given you '+names.join(', ')+'. '+held+' entr'+(held===1?'y':'ies')+
+            ' could NOT be saved — they are still on this phone. Tell head office.', 9000);
+    }else{
+      showPending();
+    }
   }catch(err){
     console.error(err);
     setSync('bad', pendingCount()+' not sent');
@@ -1114,7 +1491,7 @@ async function flush(){
 
 $('#sync').addEventListener('click', ()=>{
   if(!cloudOn()) return;
-  if(pendingCount()) flush(); else cloudBootstrap();
+  if(pendingCount()) flush(true); else cloudBootstrap();   // a tap is a deliberate retry
 });
 
 /* ---- coming back to the app ------------------------------------------
@@ -1185,7 +1562,7 @@ $('#impRun').addEventListener('click', async ()=>{
         if(withEntries){
           const num = key => { const raw=g(key); if(raw===''||raw===null) return null;
                                const v=Math.round(Math.abs(+raw)); return isFinite(v)?v:null; };
-          const std = stdDays(site);
+          const std = stdDays(site, ym);
           let wd = num('wd');
           if(wd==null){                       // no WD column filled — work it back from AB or OT
             const ab = num('ab'), ot = num('ot');
@@ -1209,7 +1586,7 @@ $('#impRun').addEventListener('click', async ()=>{
 });
 
 /* -------------------------------------------------------------- export */
-const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT','AB','ACCOUNT NUMBER','IFSC CODE'];
+const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT','AB','ACCOUNT NUMBER','IFSC CODE','CANTEEN'];
 function openExport(){
   const site=curSite(), ym=curMonth();
   if(!site) return toast('Nothing to export yet');
@@ -1228,7 +1605,7 @@ function canShareFiles(){
 function buildBook(){
   const ym = curMonth(), all = $('#expAll').checked, onlyFilled = $('#expOnlyFilled').checked;
   const sites = all ? DB.sites : [curSite()];
-  const widths = [11,26,26,7,7,7,22,15];
+  const widths = [11,26,26,7,7,7,22,15,10];
   const seen = {};
   DB.sites.forEach(s => s.operators.forEach(o => {
     if(o.code) seen[o.code] = (seen[o.code]||0) + 1; }));
@@ -1237,11 +1614,15 @@ function buildBook(){
     for(const op of site.operators){
       if(!op.code || seen[op.code] > 1) continue;   // no code, or a shared one: not payable
       const e = getEntry(site.id, ym, opKey(op));
-      const has = e.wd!=null || e.ot!=null || e.ab!=null;
+      const has = e.wd!=null || e.ot!=null || e.ab!=null || e.cq!=null || e.ca!=null;
       if(onlyFilled && !has) continue;
+      // OT carries the holidays he worked. The split is kept in the sheet's nh
+      // column for audit. CANTEEN is the deduction, blank on a site without one.
+      const ot = (e.ot!=null || e.nh!=null) ? totalOt(e) : null;
       rows.push([ {v:op.code}, op.name||'', op.father||'',
-                  e.wd!=null?+e.wd:null, e.ot!=null?+e.ot:null, e.ab!=null?+e.ab:null,
-                  {v:op.account||''}, {v:op.ifsc||''} ]);
+                  e.wd!=null?+e.wd:null, ot, e.ab!=null?+e.ab:null,
+                  {v:op.account||''}, {v:op.ifsc||''},
+                  e.ca!=null?+e.ca:null ]);
     }
     return { name: site.name, rows, widths };
   });
@@ -1308,6 +1689,10 @@ $('#bkFile').addEventListener('change', async e=>{
 /* ---------------------------------------------------------------- boot */
 if(!DB.ui.month) DB.ui.month = new Date().toISOString().slice(0,7);
 if(!DB.settings) DB.settings = { std: 30 };
+/* Opening the app puts him on last month — the one he is here to fill in. He can
+   still pick any other month; that lasts until he closes it. Anything queued
+   carries its own month, so this can never re-file it under the wrong one. */
+DB.ui.month = prevMonth();
 for(const s of DB.sites){ const used=new Set();
   for(const o of s.operators){ if(!o.key) o.key = makeKey(o.code, o.name, used); else used.add(o.key); } }
 deriveAll();                       // normalise anything stored by an older version

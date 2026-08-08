@@ -10,7 +10,7 @@
  *      lookups keep matching the plain ./ entry, the phone serves the install-time
  *      app for ever and no fix ever reaches it. This bit is load-bearing.
  */
-const CACHE = 'attendance-crm-v6';   // v6: the app pulls the month when it is reopened
+const CACHE = 'attendance-crm-v11';  // v11: the app opens on last month, and the queue carries its month
 const ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'
