@@ -1059,6 +1059,7 @@ async function cloudBootstrap(silent){
       derive(site, ym, key);
     }
     if(!keep.has(DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
+    lastPull = Date.now();          // a manual reload resets the throttle too
     save(); render();
     if(pendingCount()) flush(); else setSync('ok','Saved');
     if(!silent) toast('Loaded '+DB.sites.length+' site(s) for '+((d.supervisor&&d.supervisor.name)||'you'));
@@ -1115,8 +1116,33 @@ $('#sync').addEventListener('click', ()=>{
   if(!cloudOn()) return;
   if(pendingCount()) flush(); else cloudBootstrap();
 });
-window.addEventListener('online', ()=>{ if(cloudOn()) flush(); });
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && cloudOn() && pendingCount()) flush(); });
+
+/* ---- coming back to the app ------------------------------------------
+   The phone pushes the moment anything is typed, but until now it only ever
+   pulled when the link was first opened. Two supervisors on one site could
+   not see each other's work, and neither could a man carrying two phones.
+   So on returning to the app — and on getting signal back — we send whatever
+   is queued and then quietly pull the month.
+
+   The order matters. Sending first means our own work is already in the sheet
+   before we ask what the sheet holds, and cloudBootstrap skips anything still
+   in DB.pending, so a value typed in a tunnel is never overwritten by the
+   older one the server still has.
+
+   Throttled, because on a phone 'visible' fires every time the screen wakes,
+   and Apps Script is not fast. */
+const REFRESH_EVERY = 20000;
+let lastPull = Date.now();      // the opening bootstrap counts as a pull
+async function refresh(force){
+  if(!cloudOn() || !navigator.onLine) return;
+  if(!force && Date.now() - lastPull < REFRESH_EVERY) return;
+  lastPull = Date.now();
+  if(pendingCount()) await flush();
+  await cloudBootstrap(true);   // silent: no toast for something he did not ask for
+}
+window.addEventListener('online', ()=>{ refresh(true); });
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refresh(); });
+window.addEventListener('pageshow', e=>{ if(e.persisted) refresh(); });   // iOS back-forward cache
 setInterval(()=>{ if(cloudOn() && pendingCount() && navigator.onLine) flush(); }, 30000);
 
 /* -------------------------------------------------------------- import */
