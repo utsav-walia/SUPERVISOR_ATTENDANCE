@@ -19,6 +19,12 @@ a{color:var(--brand)}
 header{background:var(--brand);color:#fff;padding:14px 22px;display:flex;align-items:center;gap:14px}
 header h1{font-size:17px;margin:0;font-weight:600;flex:1}
 header .who{font-size:12px;opacity:.85}
+.unsent{margin-left:14px;color:#ffd9d5;font-weight:700;white-space:nowrap}
+#unsentBar{background:#fdeceb;border-bottom:1px solid #e9b9b5;color:#7a1d17;
+  padding:11px 16px;font-size:13.5px;line-height:1.5;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#unsentBar b{color:#b3261e}
+#unsentBar .btn{background:var(--brand);color:#fff;border:0;flex:0 0 auto;margin-left:auto;
+  padding:9px 14px;border-radius:9px;font-weight:700}
 nav{background:var(--card);border-bottom:1px solid var(--line);padding:0 14px;display:flex;gap:2px;position:sticky;top:0;z-index:20;overflow-x:auto}
 nav button{padding:12px 16px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
 nav button.on{color:var(--brand);border-bottom-color:var(--brand)}
@@ -88,6 +94,13 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
   <span class="who" id="hdrStat"></span>
 </header>
 
+<div id="unsentBar" style="display:none">
+  <b>These changes are only in this browser.</b>
+  The supervisors' links read the Google Sheet, so nothing you have done here
+  reaches their phones until you upload it.
+  <button class="btn" id="unsentGo">⇧ Upload everything to the sheet</button>
+</div>
+
 <nav>
   <button data-tab="t1" class="on">1 · Sites &amp; operators</button>
   <button data-tab="t2">2 · Supervisors</button>
@@ -112,6 +125,9 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <div class="bar">
       <input type="file" id="masterFile" accept=".xlsx,.xlsm" style="width:auto">
       <button class="btn pri" id="masterRun">Load master file</button>
+      <label class="muted" style="display:flex;align-items:center;gap:6px;font-size:13px">
+        <input type="checkbox" id="masterReplace" style="width:16px;height:16px;accent-color:var(--brand)">
+        Make each site match the file exactly</label>
       <span class="grow"></span>
       <button class="btn" id="purgeNoCode">Remove operators with no EMP Code</button>
       <button class="btn" id="addSite">Add site by hand</button>
@@ -124,11 +140,10 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <span class="muted" id="rejCount"></span>
       <button class="btn" id="rejDl">Download the list</button>
     </div>
-    <p class="hint">Every operator must have an EMP Code. On any one site, no EMP Code and no bank
-      account may appear twice — but the same man may hold a row at several sites, and nothing is
-      compared across sites. IFSC codes must be well formed, though men at the same branch will share
-      one. These rows break those rules, so the whole file was refused and your existing list is
-      untouched. Correct them in the master Excel and load it again.</p>
+    <p class="hint">Every operator must have an EMP Code, and no two operators anywhere may share
+      an EMP Code or a bank account number. IFSC codes must be well formed, but may be shared —
+      men at the same branch will match. These rows break those rules, so the whole file was refused
+      and your existing list is untouched. Correct them in the master Excel and load it again.</p>
     <div id="rejTable"></div>
   </div>
 
@@ -184,6 +199,9 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       <button class="btn pri" id="dlAll">Download all as ZIP</button>
       <button class="btn" id="dlEach">Download each separately</button>
       <span class="grow"></span>
+      <label class="muted" style="display:flex;gap:7px;align-items:center">Standard month
+        <input type="number" id="stdVal" min="1" max="31" style="width:74px">
+      </label>
     </div>
   </div>
   <div class="panel" style="padding:0;overflow:hidden"><div id="issueTable"></div></div>
@@ -304,12 +322,6 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <div class="f"><label>Site name</label><input type="text" id="stName" autocomplete="off"></div>
     <p class="muted" style="font-size:12.5px;margin:0">The site name becomes the sheet name in every export, so keep it
       exactly as you want it to appear in payroll.</p>
-    <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px">
-      <input type="checkbox" id="stFixed26" style="margin-top:3px">
-      <span><b>Pays a fixed 26-day month</b><br>
-      <span class="muted" style="font-size:12.5px">Absent is counted against 26 in every month, February included.
-      Untick and the site follows the calendar — 31, 30 or 28 days.</span></span>
-    </label>
   </div>
   <div class="foot">
     <button class="btn dgr" id="siteDel">Delete</button>
@@ -491,6 +503,21 @@ const KEY='attendance-crm-admin.v1';
 let CFG = (()=>{ try{ const d=JSON.parse(localStorage.getItem(KEY)); if(d&&d.sites) return d; }catch(e){}
   return { sites:[], supervisors:[], std:30, api:'', key:'', base:'' }; })();
 function saveCfg(){ try{ localStorage.setItem(KEY, JSON.stringify(CFG)); }catch(e){ toast('Browser storage full'); } }
+
+/* Everything on this screen lives in THIS browser until it is pushed. The
+   supervisors' links read the Google Sheet, so an import nobody uploaded is
+   invisible to them — which looks exactly like the import having failed.
+   A fingerprint of what was last pushed tells us whether that has happened. */
+function fingerprint(){
+  return JSON.stringify({
+    std: CFG.std,
+    s: CFG.sites.map(s=>s.id+':'+s.name+':'+s.operators.map(o=>
+         o.code+'|'+o.name+'|'+o.father+'|'+o.account+'|'+o.ifsc).join(',')),
+    p: CFG.supervisors.map(x=>x.token+':'+x.name+':'+(x.siteIds||[]).join('+'))
+  });
+}
+const isPushed = () => CFG.pushed === fingerprint();
+function markPushed(){ CFG.pushed = fingerprint(); saveCfg(); renderHdr(); }
 const siteById = id => CFG.sites.find(s=>s.id===id);
 function supsOfSite(id){ return CFG.supervisors.filter(s=>s.siteIds.includes(id)); }
 
@@ -506,7 +533,13 @@ $$('nav button').forEach(b=>b.addEventListener('click',()=>{
 function renderAll(){ renderSites(); renderSups(); renderIssue(); renderHdr(); renderLinks(); saveCfg(); }
 function renderHdr(){
   const ops=CFG.sites.reduce((a,s)=>a+s.operators.length,0);
-  $('#hdrStat').textContent = CFG.sites.length+' sites · '+ops+' operators · '+CFG.supervisors.length+' supervisors';
+  const dirty = CFG.sites.length && !isPushed();
+  $('#hdrStat').innerHTML = esc(CFG.sites.length+' sites · '+ops+' operators · '+
+      CFG.supervisors.length+' supervisors') +
+    (dirty ? '<b class="unsent">● not uploaded — supervisors still see the old list</b>' : '');
+  $('#stdVal').value = CFG.std||30;
+  const bar = $('#unsentBar');
+  if(bar) bar.style.display = dirty ? '' : 'none';
 }
 function renderSites(){
   const el=$('#siteTable');
@@ -518,15 +551,9 @@ function renderSites(){
       '<td class="num">'+s.operators.length+'</td>'+
       '<td>'+(sup.length?sup.map(x=>'<span class="tag">'+esc(x.name)+'</span>').join('')
                        :'<span class="tag none">unassigned</span>')+'</td>'+
-      '<td>'+(is26(s)?'<span class="tag">26-day</span>':'')+'</td>'+
       '<td class="right"><button class="btn sm" data-site="'+s.id+'">Edit</button></td></tr>';
   }).join('');
-  el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th><th>Supervisor</th><th>Month</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    (unmatched26().length
-      ? '<p class="hint" style="color:#b3261e;padding:10px 2px 0">'+unmatched26().length+
-        ' of the 26-day site names match no site here, so they are following the calendar: <b>'+
-        unmatched26().map(esc).join(' · ')+'</b>. Open the site and tick the box, or correct the name.</p>'
-      : '');
+  el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th><th>Supervisor</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
   el.querySelectorAll('[data-site]').forEach(b=>b.addEventListener('click',()=>openSite(b.dataset.site)));
 }
 function renderSups(){
@@ -590,113 +617,107 @@ $('#masterRun').addEventListener('click', async ()=>{
   try{
     const sheets=await parseXlsx(await f.arrayBuffer());
 
-    /* A sheet finds its site by id first — that is the frozen slug of whatever
-       the tab was called when the site was born. If no id matches we try the
-       visible name, so a site that has since been renamed is still recognised
-       and updated instead of being duplicated. Only when neither matches is a
-       genuinely new site created. */
-    const resolveSiteId = nm => {
-      const raw = slug(nm), clean = norm(cleanSiteName(nm));
-      const byId = CFG.sites.find(s => s.id === raw);
-      if(byId) return byId.id;
-      const byName = CFG.sites.find(s => norm(s.name) === clean);
-      if(byName) return byName.id;
-      return raw;
-    };
-
-    /* ---- pass one: read the whole file and judge it. Nothing is written to
-       CFG here. The rules are all scoped to ONE SITE, because a man may
-       genuinely work at several sites and hold a row at each:
+    /* ---- pass one: read the whole file and judge it. Nothing is written to CFG
+       here. The rules, and any one of them condemns the file:
          1. every operator must have an EMP Code
-         2. an EMP Code may appear only once on a given site
-         3. a bank account may sit against only one EMP Code on a given site
-         4. an IFSC code must be well formed — but may be shared, since men at
-            the same branch legitimately match
-       Nothing is compared across sites. A half-applied import would be worse
-       than no import, so the file is only touched once it is known to be clean. */
+         2. an EMP Code belongs to one man, company-wide
+         3. a bank account number belongs to one man, company-wide
+         4. an IFSC code must be well formed
+       Name, father's name and IFSC may legitimately repeat — two men can share a
+       name and a whole site can bank at one branch — so those are never refused.
+       A half-applied import is worse than none, so the file is only applied once
+       it is known to be clean. */
     rejects = [];
     const skipped=[], parsed=[];
     const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-    const REAL_ACCT = /^[0-9]{6,}$/;     // anything else is a note, not an account
+    const replace = $('#masterReplace').checked;
 
-    /* Which existing records this file rewrites, and with what account. A man
-       given a corrected EMP Code takes his account with him, so the account
-       still filed under his old code must not be held against him. Only records
-       the file supplies an account for are set aside — if the sheet leaves the
-       account blank the old one survives the import and must keep guarding. */
-    const incomingAcct = new Map();          // SITEID|CODE -> account in this file
-    for(const sh of sheets){
-      const h=findHeader(sh.rows); if(!h) continue;
-      const id=resolveSiteId(sh.name);
-      for(let i=h.i+1;i<sh.rows.length;i++){
-        const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
-        const c=trim(g('code')).toUpperCase();
-        if(c && !JUNK_CODE.test(norm(c))) incomingAcct.set(id+'|'+c, trim(g('account')));
-      }
-    }
-
-    /* Everything already in the console, keyed by site. */
-    const acctOwner = new Map();   // SITEID|ACCOUNT -> {name, code}
-    CFG.sites.forEach(st => st.operators.forEach(o => {
+    const owner = new Map(), acctOwner = new Map();   // what the console holds today
+    CFG.sites.forEach(s => s.operators.forEach(o => {
+      if(o.code) owner.set(o.code, {site:s.name, name:o.name, id:s.id, code:o.code});
       const a = trim(o.account);
-      if(!REAL_ACCT.test(a)) return;
-      if(o.code && incomingAcct.get(st.id+'|'+o.code)) return;   // being rewritten
-      acctOwner.set(st.id+'|'+a, {name:o.name, code:o.code});
+      if(a) acctOwner.set(a, {site:s.name, name:o.name, id:s.id, code:o.code});
     }));
 
-    const inFile     = new Map();  // SITEID|CODE    -> name seen in this file
-    const acctInFile = new Map();  // SITEID|ACCOUNT -> {name, code} seen in this file
-
+    /* sweep A — read every row, nothing judged yet except a missing code */
+    const all = [];
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
-      const id=resolveSiteId(sh.name), clean=cleanSiteName(sh.name), recs=[];
+      const clean=cleanSiteName(sh.name);
+      // A site renamed in the console keeps its old id, so match on the name too —
+      // otherwise renaming CAVENDISH to CAVENDISH JK TYRE would build a second site
+      // and strand the supervisors and the attendance on the first.
+      const existing = CFG.sites.find(s=>s.id===slug(sh.name)) ||
+                       CFG.sites.find(s=>norm(s.name)===norm(clean));
+      const id = existing ? existing.id : slug(sh.name);
+      const rows = [];
       for(let i=h.i+1;i<sh.rows.length;i++){
         const r=sh.rows[i]||[], g=k=>h.map[k]===undefined?'':(r[h.map[k]]===undefined?'':r[h.map[k]]);
         const code=trim(g('code')).toUpperCase(), name=trim(g('name'));
         if(!code && !name) continue;
         if(JUNK_CODE.test(norm(code))) continue;
-        const father=trim(g('father')), account=trim(g('account')), ifsc=trim(g('ifsc')).toUpperCase();
-        const row={site:clean, siteId:id, row:i+1, code, name, father, account, ifsc};
+        rows.push({site:clean, siteId:id, row:i+1, code, name,
+                   father:trim(g('father')), account:trim(g('account')),
+                   ifsc:trim(g('ifsc')).toUpperCase()});
+      }
+      all.push({id, clean, rows});
+    }
+
+    /* what this file knows about, needed before anything can be judged */
+    const fileCodes = new Set(), fileSites = new Set();
+    all.forEach(s => { fileSites.add(s.id); s.rows.forEach(r => { if(r.code) fileCodes.add(r.code); }); });
+    // a console row the file is about to rewrite cannot clash with the file
+    const stale = held => !held || fileCodes.has(held.code) || (replace && fileSites.has(held.id));
+
+    /* sweep B — judge */
+    const seenCode = new Map(), seenAcct = new Map(), moved = [];
+    for(const sheet of all){
+      const recs = [];
+      for(const row of sheet.rows){
+        const {code, name, account, ifsc, siteId, site} = row;
 
         if(!code){ rejects.push(Object.assign({}, row, {kind:'nocode', why:'No EMP Code'})); continue; }
 
-        // One EMP Code, one man — on this site. The same code at another site is
-        // that man working there too, and is left alone.
-        const twice = inFile.get(id+'|'+code);
-        if(twice){
+        const cTwice = seenCode.get(code);
+        if(cTwice){
           rejects.push(Object.assign({}, row, {kind:'code',
-            why:'EMP Code appears twice on '+clean+' — also on '+twice+' in this file'}));
+            why:'EMP Code repeated — also on '+cTwice.name+' at '+cTwice.site+' in this file'}));
           continue;
         }
+        // The same code on another site is that man being transferred: the file holds
+        // it exactly once, so there is no doubt who he is — he works elsewhere now.
+        const cHeld = owner.get(code);
+        if(cHeld && cHeld.id !== siteId){
+          row.movedFrom = cHeld.id;
+          moved.push({code, name, from:cHeld.site, to:site});
+        }
 
-        // IFSC — shape only. Sharing one is normal and must never be refused.
         if(ifsc && !IFSC_RE.test(ifsc)){
           rejects.push(Object.assign({}, row, {kind:'ifsc',
             why:'IFSC code is malformed — expected 4 letters, then 0, then 6 more'}));
           continue;
         }
 
-        // One account, one EMP Code — again only within this site.
-        if(REAL_ACCT.test(account)){
-          const aTwice = acctInFile.get(id+'|'+account);
-          const aHeld  = acctOwner.get(id+'|'+account);
+        if(account){
+          const aTwice = seenAcct.get(account);
           if(aTwice){
             rejects.push(Object.assign({}, row, {kind:'account',
-              why:'Account number appears twice on '+clean+' — also on '+aTwice.name+' ('+aTwice.code+') in this file'}));
+              why:'Account number repeated — also on '+aTwice.name+' ('+aTwice.code+') at '+aTwice.site+' in this file'}));
             continue;
           }
-          if(aHeld && aHeld.code !== code){
+          const aHeld = acctOwner.get(account);
+          if(aHeld && aHeld.code !== code && !stale(aHeld)){
             rejects.push(Object.assign({}, row, {kind:'account',
-              why:'Account number is already against '+aHeld.name+' ('+aHeld.code+') on '+clean}));
+              why:'Account number already belongs to '+aHeld.name+' ('+aHeld.code+') at '+aHeld.site}));
             continue;
           }
         }
 
-        inFile.set(id+'|'+code, name);
-        if(REAL_ACCT.test(account)) acctInFile.set(id+'|'+account, {name, code});
+        seenCode.set(code, {site, name});
+        if(account) seenAcct.set(account, {site, name, code});
         recs.push(row);
       }
-      parsed.push({id, clean, recs});
+      parsed.push({id:sheet.id, clean:sheet.clean, recs});
     }
 
     /* ---- the verdict */
@@ -713,11 +734,27 @@ $('#masterRun').addEventListener('click', async ()=>{
     }
 
     /* ---- pass two: the file is clean, so apply it */
-    let nSites=0,nOps=0,nUpd=0;
+    let nSites=0,nOps=0,nUpd=0; const dropped=[];
+
+    // take transferred men off their old site first, so no code exists twice midway
+    for(const {recs} of parsed) for(const rec of recs){
+      if(!rec.movedFrom) continue;
+      const from = CFG.sites.find(s=>s.id===rec.movedFrom);
+      if(from) from.operators = from.operators.filter(o=>o.code!==rec.code);
+    }
+
     for(const {id, clean, recs} of parsed){
       let site=CFG.sites.find(s=>s.id===id);
       if(!site){ site={id, name:clean, operators:[]}; CFG.sites.push(site); nSites++; }
       else site.name = clean;
+      if(replace){
+        // the file is the truth for this site: anyone not in it has left
+        const keep=new Set(recs.map(r=>r.code));
+        site.operators.forEach(o=>{ if(!keep.has(o.code))
+          dropped.push({site:clean, code:o.code, name:o.name, father:o.father,
+                        account:o.account, ifsc:o.ifsc}); });
+        site.operators = site.operators.filter(o=>keep.has(o.code));
+      }
       const used=new Set(site.operators.map(opKey));
       for(const rec of recs){
         const ex = site.operators.find(o=>o.code===rec.code);
@@ -730,45 +767,30 @@ $('#masterRun').addEventListener('click', async ()=>{
       site.operators.sort((a,b)=>
         (a.code||'').localeCompare(b.code||'',undefined,{numeric:true}));
     }
+    if(dropped.length || moved.length){
+      const book=[];
+      if(moved.length){
+        const rows=[['CODE NO.','NAME','MOVED FROM','MOVED TO']];
+        moved.forEach(m=>rows.push([{v:m.code}, m.name, m.from, m.to]));
+        book.push({name:'MOVED SITE', rows, widths:[14,26,24,24]});
+      }
+      if(dropped.length){
+        const rows=[['SITE','CODE NO.','NAME','FATHER NAME','ACCOUNT NUMBER','IFSC CODE']];
+        dropped.forEach(d=>rows.push([d.site,{v:d.code},d.name,d.father,{v:d.account},{v:d.ifsc}]));
+        book.push({name:'NO LONGER LISTED', rows, widths:[24,14,26,26,22,15]});
+      }
+      download('IMPORT_CHANGES.xlsx', buildXlsx(book),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    }
     renderAll();
     renderRejects();
     toast('Accepted — '+nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated'+
-          (skipped.length?' · skipped '+skipped.join(', '):''), 5600);
+          (moved.length?' · '+moved.length+' moved site':'')+
+          (dropped.length?' · '+dropped.length+' no longer listed':'')+
+          ((moved.length||dropped.length)?' · IMPORT_CHANGES.xlsx saved':'')+
+          (skipped.length?' · skipped '+skipped.join(', '):''), 7000);
   }catch(err){ console.error(err); toast('Could not read the file: '+err.message, 5000); }
 });
-
-/* ---------------------------------------------------- 26-day duty sites
-   These sites pay a flat 26-day month. The list below is head office's
-   original one and acts as the default, so a site answers correctly even
-   before anyone touches it — and again after 'Load everything from the
-   sheet', which rebuilds the site records and would otherwise lose the
-   setting. CFG.fx26 holds only the sites you have explicitly ticked or
-   unticked by hand; those decisions win and survive any reload. */
-const FIXED26_NAMES = [
-  'SINGLER', 'AGGARWAL GUJRAT', 'AGGARWAL RAJ', 'ASAHI BHILWARA',
-  'ASAHI ROORKEE', 'ASAHI TALOJA', 'BAJPUR', 'CARRIER AIRCON',
-  'CAVENDISH JK TYRE', 'CMR HARIDWAR', 'EASTMAN', 'EMAMI BALASORE',
-  'IP ALL NIMRANA SANPALI AGRA VARANASI', 'KASHIPUR', 'LT FOOD', 'MANESAR',
-  'MERINO HALOL', 'MERINO HAPUR', 'MERINO HR', 'NEW HOLAND', 'NIHON',
-  'NOIDA N1 & N2', 'POLYPLEX KHATIMA', 'SAMSUNG 1', 'SAMSUNG 2', 'SUDAMA WOOD'
-];
-const FIXED26 = new Set(FIXED26_NAMES.map(norm));
-function is26(site){
-  if(!site) return false;
-  const fx = CFG.fx26 || {};
-  if(Object.prototype.hasOwnProperty.call(fx, site.id)) return !!fx[site.id];
-  return FIXED26.has(norm(site.name));
-}
-function set26(siteId, on){
-  CFG.fx26 = CFG.fx26 || {};
-  CFG.fx26[siteId] = !!on;
-}
-/* Which of head office's 26 names match no site at all. A silent mismatch
-   would quietly put a site back on calendar days, so it is shown, not hidden. */
-function unmatched26(){
-  const have = new Set(CFG.sites.map(x=>norm(x.name)));
-  return FIXED26_NAMES.filter(n => !have.has(norm(n)));
-}
 
 /* site dialog */
 let editSiteId=null;
@@ -777,7 +799,6 @@ function openSite(id){
   const s=id?siteById(id):null;
   $('#siteTitle').textContent = s?'Edit site':'Add site';
   $('#stName').value = s?s.name:'';
-  $('#stFixed26').checked = s ? is26(s) : false;
   $('#siteDel').style.display = s?'':'none';
   $('#dlgSite').showModal();
 }
@@ -814,8 +835,7 @@ $('#addSite').addEventListener('click',()=>openSite(null));
 $('#siteCancel').addEventListener('click',()=>$('#dlgSite').close());
 $('#siteSave').addEventListener('click',()=>{
   const name=trim($('#stName').value); if(!name) return toast('Enter a site name');
-  const want26 = $('#stFixed26').checked;
-  if(editSiteId){ siteById(editSiteId).name = name; set26(editSiteId, want26); }
+  if(editSiteId){ siteById(editSiteId).name = name; }
   else{
     const id=slug(name);
     if(siteById(id)) return toast('A site with that name already exists');
@@ -889,11 +909,12 @@ $('#supDel').addEventListener('click',()=>{
 /* -------------------------------------------------- 3. setup files */
 function setupFor(sup){
   return {
-    type:'attendance-crm-setup', v:2,
+    type:'attendance-crm-setup', v:1,
     issued:new Date().toISOString().slice(0,10),
+    std:CFG.std||30,
     supervisor:{ id:sup.id, name:sup.name, state:sup.state||'', phone:sup.phone||'' },
     sites: sup.siteIds.map(i=>siteById(i)).filter(Boolean)
-      .map(s=>({ id:s.id, name:s.name, state:s.state||'', fixed26:is26(s), operators:s.operators }))
+      .map(s=>({ id:s.id, name:s.name, state:s.state||'', operators:s.operators }))
   };
 }
 const setupName = sup => 'SETUP_'+sup.name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'')+'.json';
@@ -914,6 +935,8 @@ function renderIssue(){
     download(setupName(s), JSON.stringify(setupFor(s),null,1), 'application/json');
   }));
 }
+$('#stdVal').addEventListener('change',e=>{ const v=Math.round(+e.target.value||0);
+  if(v>0&&v<=31){ CFG.std=v; saveCfg(); toast('Standard month set to '+v+' days'); } else e.target.value=CFG.std||30; });
 $('#dlAll').addEventListener('click',()=>{
   const ready=CFG.supervisors.filter(s=>s.siteIds.length);
   if(!ready.length) return toast('No supervisor has sites assigned yet');
@@ -1096,8 +1119,16 @@ $('#apiPush').addEventListener('click', async ()=>{
     if(made) out.push('', '<span class="warn">'+made+' supervisor(s) were given a new link just now — send them out.</span>');
     const noSites = CFG.supervisors.filter(s=>!s.siteIds.length);
     if(noSites.length) out.push('', '<span class="warn">No sites assigned: '+noSites.map(s=>cesc(s.name)).join(', ')+'</span>');
-    clog(out); renderLinks(); toast('Uploaded');
+    markPushed();                       // the sheet now matches this screen
+    clog(out); renderLinks();
+    toast('Uploaded — the supervisors’ links now show '+d.sites+' sites and '+d.operators+' operators', 5000);
   }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Upload failed: '+err.message, 4500); }
+});
+$('#unsentGo').addEventListener('click', ()=>{
+  $$('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab==='t6'));
+  $$('main section').forEach(s=>s.classList.toggle('on', s.id==='t6'));
+  $('#apiUrl').value=CFG.api||''; $('#apiKey').value=CFG.key||''; renderLinks();
+  $('#apiPush').click();
 });
 
 $('#cfgJs').addEventListener('click', ()=>{
@@ -1277,7 +1308,7 @@ $('#apiPull').addEventListener('click', async ()=>{
     // supervisors come back keyed by token; give each one a local id again
     CFG.supervisors = (d.supervisors||[]).map(s=>({
       id:uid(), token:s.token, name:s.name, phone:s.phone||'', siteIds:s.siteIds||[] }));
-    saveCfg(); renderAll();
+    saveCfg(); markPushed(); renderAll();   // this screen now matches the sheet
     const ops = CFG.sites.reduce((a,s)=>a+s.operators.length,0);
     const out = ['<span class="ok">✓ Loaded from the sheet</span>','',
       '   sites        '+CFG.sites.length,
