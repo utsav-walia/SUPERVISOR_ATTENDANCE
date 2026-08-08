@@ -82,11 +82,10 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
   border-radius:7px;padding:5px 10px;font:inherit;font-weight:700;cursor:pointer}
 .nhbar.on{background:#eaf2fe;color:#1b4b8f}
 .nhbar.off{background:#f4f5f7;color:#5c6470}
-.tabs{display:flex;gap:6px;margin-bottom:10px;background:#eef0f4;padding:4px;border-radius:11px}
-.tabs button{flex:1;border:0;background:transparent;border-radius:8px;padding:9px 6px;
-  font:inherit;font-weight:700;font-size:14px;color:#5c6470;cursor:pointer}
-.tabs button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
-.inp.amt input{font-weight:700}
+.inputs.canteen{grid-template-columns:1fr 1.4fr;margin-top:7px;padding-top:9px;
+  border-top:1px dashed var(--line)}
+.inp.meals label{color:#7a5b00} .inp.amt label{color:#7a5b00}
+.inp.meals input{border-color:#e6d5a8} .inp.amt input{border-color:#e6d5a8;font-weight:700}
 .ratenote{margin-top:8px;padding:9px 10px;border-radius:9px;background:#fff6e5;
   color:#8a5a00;font-size:12px;font-weight:600;line-height:1.4}
 .card.warn{border-color:#f0d9a8}
@@ -180,11 +179,6 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 </div>
 
 <div class="controls">
-  <!-- only shown when this supervisor has a site that runs a canteen -->
-  <div class="tabs" id="tabs" style="display:none">
-    <button data-tab="att" class="on">Attendance</button>
-    <button data-tab="canteen">Canteen</button>
-  </div>
   <div class="row">
     <div class="field"><label>Site</label><select id="selSite"></select></div>
     <div class="field" style="flex:0 0 140px"><label>Month</label><input type="month" id="selMonth"></div>
@@ -599,8 +593,6 @@ const totalOt = e => (+e.ot||0) + (+e.nh||0);
    he took; the site's rate turns that into money. He may type the amount
    instead, and that overrides the rate until he clears the box again —
    e.caM is that decision, kept so a rate change cannot silently rewrite it. */
-const canteenSites = () => DB.sites.filter(s=>s.canteen);
-const canteenOn = () => canteenSites().length > 0;
 function canteenRate(site){
   const s = typeof site === 'string' ? DB.sites.find(x=>x.id===site) : site;
   const v = s ? +s.canteenRate : 0;
@@ -621,7 +613,6 @@ function deriveCanteen(siteId, ym, key){
   save();
   return DB.entries[k] || {};
 }
-const inCanteen = () => DB.ui.tab === 'canteen';
 function curSite(){ return DB.sites.find(s=>s.id===DB.ui.site) || DB.sites[0] || null; }
 /* Attendance is filled in AFTER the month has ended, so the month the app opens
    on is last month, not this one. Built from the local date parts rather than an
@@ -774,30 +765,21 @@ $$('[data-close]').forEach(b=>b.addEventListener('click', hide));
 /* ----------------------------------------------------------- rendering */
 function renderSites(){
   const sel=$('#selSite'), fsel=$('#fSite');
-  // in the Canteen tab only the sites that actually run one are offered
-  const list = inCanteen() ? canteenSites() : DB.sites;
-  if(!DB.ui.site || !list.some(s=>s.id===DB.ui.site)) DB.ui.site = list[0] ? list[0].id : null;
-  const opts = list.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+' ('+s.operators.length+')</option>').join('');
+  if(!DB.ui.site || !DB.sites.some(s=>s.id===DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
+  const opts = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+' ('+s.operators.length+')</option>').join('');
   sel.innerHTML = opts || '<option value="">— no sites yet —</option>';
   fsel.innerHTML = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+'</option>').join('');
   if(DB.ui.site){ sel.value=DB.ui.site; fsel.value=DB.ui.site; }
 }
-function renderTabs(){
-  const bar = $('#tabs');
-  const show = canteenOn();
-  bar.style.display = show ? '' : 'none';
-  if(!show && inCanteen()) DB.ui.tab = 'att';        // his last canteen site was taken away
-  bar.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.tab === (DB.ui.tab||'att')));
-}
 function render(){
-  renderTabs();
   renderSites();
   $('#selMonth').value = curMonth();
-  if(inCanteen()) return renderCanteen();
   const site = curSite(), ym = curMonth(), list=$('#list'), q = norm($('#q').value);
   $('#barTitle').textContent = DB.supervisor ? DB.supervisor.name : 'Attendance CRM';
+  const rate = site ? canteenRate(site) : 0;
   $('#barSub').textContent = site
-    ? site.name + ' · ' + monthLabel(ym) + ' · ' + stdDays(site, ym) + ' day month'
+    ? site.name + ' · ' + monthLabel(ym) + ' · ' + stdDays(site, ym) + ' day month' +
+      (site.canteen ? ' · canteen' + (rate ? ' ₹'+rate+' each' : ' (no rate)') : '')
     : 'Working Days · Overtime · Absent';
 
   if(!site){
@@ -830,14 +812,15 @@ function render(){
         : '';
 
   const hols = holidaysIn(ym);
-  let filled=0, tWd=0, tOt=0, tAb=0, tNh=0, html='', shown=0, blocked=0, payable=0;
+  let filled=0, tWd=0, tOt=0, tAb=0, tNh=0, tQty=0, tAmt=0, html='', shown=0, blocked=0, payable=0;
   for(const op of site.operators){
     const fault = faultOf(op);
     if(fault) blocked++; else payable++;
     const e = getEntry(site.id, ym, opKey(op));
     const has = e.wd!=null || e.ot!=null || e.ab!=null;
     if(has && !fault) filled++;
-    if(!fault){ tWd += (+e.wd||0); tOt += totalOt(e); tAb += (+e.ab||0); tNh += (+e.nh||0); }
+    if(!fault){ tWd += (+e.wd||0); tOt += totalOt(e); tAb += (+e.ab||0); tNh += (+e.nh||0);
+                tQty += (+e.cq||0); tAmt += (+e.ca||0); }
     if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
               norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
     shown++;
@@ -852,7 +835,9 @@ function render(){
       (fault?'':'<button class="editbtn" data-edit="'+xmlEsc(opKey(op))+'">✎</button>')+'</div>'+
       '<div class="meta">'+(meta||'—')+'</div>'+
       (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
-             : '<div class="inputs">'+ fld(e, std) +'</div>' + nhBar(e, hols))+'</div>';
+             : '<div class="inputs">'+ fld(e, std) +'</div>' +
+               (site.canteen ? '<div class="inputs canteen">'+ cfld(e, rate) +'</div>' : '') +
+               nhBar(e, hols))+'</div>';
   }
   $('#chips').innerHTML =
     '<span class="chip">Operators <b>'+payable+'</b></span>'+
@@ -863,71 +848,24 @@ function render(){
     '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
     '<span class="chip'+(std!==30?' b':'')+'">Standard month <b>'+std+'</b></span>'+
     (hols.length ? '<span class="chip b" title="'+xmlEsc(holidayLabel(ym))+'">'+
-        xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b></span>' : '');
+        xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b></span>' : '')+
+    (site.canteen ? '<span class="chip g">Total meals <b>'+tQty+'</b></span>'+
+        '<span class="chip b">Total ₹ <b>'+money(tAmt)+'</b></span>'+
+        (rate ? '<span class="chip">Rate <b>₹'+rate+'</b></span>'
+              : '<span class="chip r">No canteen rate set</span>') : '');
 
-  list.innerHTML = html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
-    (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>';
+  // a canteen with no rate: he can still record the money, but not from a count
+  const rateNote = (site.canteen && !rate)
+    ? '<div class="ratenote">Head office has not set a canteen rate for this site, so the amount '+
+      'cannot be worked out from the meals. You can still type the amount yourself.</div>' : '';
+  list.innerHTML = rateNote + (html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
+    (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>');
 }
-/* ------------------------------------------------------------- canteen view
-   Same list of men, different two boxes. Barred men are barred here too: a man
-   with no EMP Code cannot be paid, so he cannot be deducted from either. */
-function renderCanteen(){
-  const site = curSite(), ym = curMonth(), list = $('#list'), q = norm($('#q').value);
-  $('#barTitle').textContent = DB.supervisor ? DB.supervisor.name : 'Attendance CRM';
-  const rate = canteenRate(site);
-  $('#barSub').textContent = site
-    ? site.name + ' · ' + monthLabel(ym) + ' · canteen' + (rate ? ' ₹'+rate+' each' : '')
-    : 'Canteen';
-
-  if(!site){
-    $('#chips').innerHTML='';
-    list.innerHTML = '<div class="empty"><b>No canteen site</b>None of your sites runs a canteen. '+
-      'If that is wrong, tell head office.</div>';
-    return;
-  }
-
-  const codeCount = {};
-  DB.sites.forEach(s => s.operators.forEach(o => {
-    if(o.code) codeCount[o.code] = (codeCount[o.code]||0) + 1; }));
-  const faultOf = op => !op.code ? 'No EMP Code — tell head office.'
-    : codeCount[op.code] > 1 ? 'EMP Code '+op.code+' is given to more than one man.' : '';
-
-  let filled=0, tQty=0, tAmt=0, html='', payable=0, blocked=0;
-  for(const op of site.operators){
-    const fault = faultOf(op);
-    if(fault){ blocked++; } else payable++;
-    const e = getEntry(site.id, ym, opKey(op));
-    const has = e.cq!=null || e.ca!=null;
-    if(has && !fault) filled++;
-    if(!fault){ tQty += (+e.cq||0); tAmt += (+e.ca||0); }
-    if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
-              norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
-    html += '<div class="card '+(fault?'barred':(has?'done':''))+'" data-key="'+xmlEsc(opKey(op))+'">'+
-      '<div class="chead"><span class="code'+(op.code?'':' nocode')+'">'+xmlEsc(op.code||'NO CODE')+'</span>'+
-      '<span class="nm">'+xmlEsc(op.name||'(no name)')+'</span></div>'+
-      '<div class="meta">'+(op.father?xmlEsc(op.father):'—')+'</div>'+
-      (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
-             : '<div class="inputs">'+ cfld(e, rate) +'</div>')+'</div>';
-  }
-
-  $('#chips').innerHTML =
-    '<span class="chip">Operators <b>'+payable+'</b></span>'+
-    (blocked?'<span class="chip r">Blocked <b>'+blocked+'</b></span>':'')+
-    '<span class="chip">Filled <b>'+filled+'/'+payable+'</b></span>'+
-    '<span class="chip g">Total meals <b>'+tQty+'</b></span>'+
-    '<span class="chip b">Total ₹ <b>'+money(tAmt)+'</b></span>'+
-    (rate ? '<span class="chip">Rate <b>₹'+rate+'</b></span>'
-          : '<span class="chip r">No rate set</span>');
-
-  list.innerHTML = (rate ? '' :
-      '<div class="ratenote">Head office has not set a canteen rate for this site, so the amount '+
-      'cannot be worked out from the count. You can still type the amount yourself.</div>') +
-    (html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b></div>');
-}
-/* Count is typed; amount follows the rate unless he types over it. */
+/* The canteen row, shown under WD/OT/AB on a site that runs one. Meals is what
+   he counted; the amount follows the site rate unless he types over it. */
 function cfld(e, rate){
   const auto = e.ca!=null && !e.caM;
-  return '<div class="inp wd"><label>MEALS</label>'+
+  return '<div class="inp meals"><label>MEALS</label>'+
       '<input type="number" inputmode="numeric" min="0" max="999" step="1" data-f="cq" placeholder="–" value="'+(e.cq==null?'':e.cq)+'"></div>'+
     '<div class="inp amt" style="flex:1.4"><label>AMOUNT ₹'+(auto?' <i>auto</i>':(e.caM?' <i>typed</i>':''))+'</label>'+
       '<input type="number" inputmode="decimal" min="0" step="1" data-f="ca" placeholder="'+(rate?'–':'type it')+'" value="'+(e.ca==null?'':e.ca)+'"></div>';
@@ -962,16 +900,6 @@ function fld(e, std){
 }
 
 /* -------------------------------------------------------------- events */
-$('#tabs').addEventListener('click', e=>{
-  const b = e.target.closest('button[data-tab]'); if(!b) return;
-  DB.ui.tab = b.dataset.tab;
-  // each tab remembers its own site, so switching to Canteen does not strand him
-  // on a site that has none, and switching back does not lose where he was
-  const keep = DB.ui.site;
-  DB.ui.site = (DB.ui.tab==='canteen' ? DB.ui.canteenSite : DB.ui.attSite) || keep;
-  if(DB.ui.tab==='canteen') DB.ui.attSite = keep; else DB.ui.canteenSite = keep;
-  save(); render();
-});
 $('#selSite').addEventListener('change', e=>{ DB.ui.site=e.target.value; save(); render(); });
 $('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMonth(); save(); render(); if(cloudOn()) cloudBootstrap(true); });
 $('#q').addEventListener('input', render);
@@ -1003,7 +931,7 @@ $('#list').addEventListener('input', e=>{
       if(lab) lab.innerHTML = 'AMOUNT ₹'+(ent.ca!=null && !ent.caM ? ' <i>auto</i>' : (ent.caM?' <i>typed</i>':''));
     }
     card.classList.toggle('done', ent.cq!=null || ent.ca!=null);
-    updateCanteenChips();
+    updateChips();
     queue(site, key, ym);
     return;
   }
@@ -1054,29 +982,23 @@ $('#list').addEventListener('click', e=>{
   const b = e.target.closest('[data-edit]'); if(!b) return;
   openOp(b.dataset.edit);
 });
-function updateCanteenChips(){
-  const site=curSite(), ym=curMonth(); if(!site) return;
-  let filled=0,tQty=0,tAmt=0;
-  for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
-    if(e.cq!=null||e.ca!=null) filled++;
-    tQty+=(+e.cq||0); tAmt+=(+e.ca||0); }
-  const c=$('#chips').children;
-  for(const el of c){
-    if(/^Filled/.test(el.textContent))      el.innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
-    else if(/^Total meals/.test(el.textContent)) el.innerHTML='Total meals <b>'+tQty+'</b>';
-    else if(/^Total ₹/.test(el.textContent))     el.innerHTML='Total ₹ <b>'+money(tAmt)+'</b>';
-  }
-}
 function updateChips(){
   const site=curSite(), ym=curMonth(); if(!site) return;
-  let filled=0,tWd=0,tOt=0,tAb=0,tNh=0;
+  let filled=0,tWd=0,tOt=0,tAb=0,tNh=0,tQty=0,tAmt=0;
   for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
     if(e.wd!=null||e.ot!=null||e.ab!=null) filled++;
-    tWd+=(+e.wd||0); tOt+=totalOt(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0); }
-  const c=$('#chips').children;
-  if(c.length>=5){
-    c[1].innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
-    c[2].innerHTML='Total WD <b>'+tWd+'</b>'; c[3].innerHTML='Total OT <b>'+tOt+'</b>'; c[4].innerHTML='Total AB <b>'+tAb+'</b>';
+    tWd+=(+e.wd||0); tOt+=totalOt(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0);
+    tQty+=(+e.cq||0); tAmt+=(+e.ca||0); }
+  // matched on their own text rather than by position: the canteen and holiday
+  // chips only exist on some sites, so an index would land on the wrong one
+  for(const el of $('#chips').children){
+    const t = el.textContent;
+    if(/^Filled/.test(t))           el.innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
+    else if(/^Total WD/.test(t))    el.innerHTML='Total WD <b>'+tWd+'</b>';
+    else if(/^Total OT/.test(t))    el.innerHTML='Total OT <b>'+tOt+'</b>';
+    else if(/^Total AB/.test(t))    el.innerHTML='Total AB <b>'+tAb+'</b>';
+    else if(/^Total meals/.test(t)) el.innerHTML='Total meals <b>'+tQty+'</b>';
+    else if(/^Total ₹/.test(t))     el.innerHTML='Total ₹ <b>'+money(tAmt)+'</b>';
   }
   const hc = $('#chips').querySelector('.chip[title]');
   if(hc) hc.innerHTML = xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b>';
