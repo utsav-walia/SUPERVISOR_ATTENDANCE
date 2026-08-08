@@ -1207,7 +1207,8 @@ $('#dlEach').addEventListener('click',async ()=>{
 });
 
 /* ------------------------------------------------------- 4. merging */
-const COLS=['CODE NO.','NAME','FATHER NAME','WD','OT','AB','ACCOUNT NUMBER','IFSC CODE'];
+// CANTEEN sits between OT and AB, the same order as the supervisor's export
+const COLS=['CODE NO.','NAME','FATHER NAME','WD','OT','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
 let mergedBook=null, mergedName='MASTER.xlsx';
 $('#mergeRun').addEventListener('click', async ()=>{
   const files=[...$('#mergeFiles').files];
@@ -1608,8 +1609,8 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
     const MONTHS=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
                   'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
     const label = MONTHS[+month.slice(5,7)-1]+'_'+month.slice(0,4);
-    const widths=[11,26,26,7,7,7,22,15,10];
-    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD','TOTAL OT','TOTAL AB','TOTAL CANTEEN','STATUS']];
+    const widths=[11,26,26,7,7,10,7,22,15];
+    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD','TOTAL OT','TOTAL CANTEEN','TOTAL AB','STATUS']];
     let grandFilled=0, grandOps=0;
 
     CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(site=>{
@@ -1627,8 +1628,8 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const ca = r && r.ca!=null ? r.ca : null;
         if(wd!=null || ot!=null || ca!=null) filled++;
         tWd+=wd||0; tOt+=ot||0; tAb+=ab||0; tCa+=ca||0;
-        rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, ot, ab,
-                   {v:op.account||''}, {v:op.ifsc||''}, ca]);
+        rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, ot, ca, ab,
+                   {v:op.account||''}, {v:op.ifsc||''}]);
       });
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
@@ -1636,21 +1637,22 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const ot = (r.ot!=null || r.nh!=null) ? (+r.ot||0)+(+r.nh||0) : null;
         if(r.wd!=null || ot!=null || r.ca!=null) filled++;
         tWd+=r.wd||0; tOt+=ot||0; tAb+=r.ab||0; tCa+=r.ca||0;
-        rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, ot, r.ab,
-                   {v:r.account||''}, {v:r.ifsc||''}, r.ca==null?null:r.ca]); });
+        rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, ot,
+                   r.ca==null?null:r.ca, r.ab,
+                   {v:r.account||''}, {v:r.ifsc||''}]); });
 
       const total=rows.length-1;
       grandFilled+=filled; grandOps+=total;
       sheets.push({name:site.name, rows, widths});
       summary.push([site.name, supsOfSite(site.id).map(x=>x.name).join(', ')||'—',
-                    total, filled, total-filled, tWd, tOt, tAb,
-                    site.canteen ? Math.round(tCa*100)/100 : null,
+                    total, filled, total-filled, tWd, tOt,
+                    site.canteen ? Math.round(tCa*100)/100 : null, tAb,
                     filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE')]);
     });
 
     summary.push([]);
     summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','','']);
-    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,10,10,14,13]});
+    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,10,14,10,13]});
 
     download('ATTENDANCE_'+label+'.xlsx', buildXlsx(sheets),
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

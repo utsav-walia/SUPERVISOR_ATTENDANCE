@@ -1508,7 +1508,8 @@ $('#impRun').addEventListener('click', async ()=>{
 });
 
 /* -------------------------------------------------------------- export */
-const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT','AB','ACCOUNT NUMBER','IFSC CODE','CANTEEN'];
+// CANTEEN sits between OT and AB — the order payroll reads them in
+const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
 function openExport(){
   const site=curSite(), ym=curMonth();
   if(!site) return toast('Nothing to export yet');
@@ -1527,7 +1528,7 @@ function canShareFiles(){
 function buildBook(){
   const ym = curMonth(), all = $('#expAll').checked, onlyFilled = $('#expOnlyFilled').checked;
   const sites = all ? DB.sites : [curSite()];
-  const widths = [11,26,26,7,7,7,22,15,10];
+  const widths = [11,26,26,7,7,10,7,22,15];
   const seen = {};
   DB.sites.forEach(s => s.operators.forEach(o => {
     if(o.code) seen[o.code] = (seen[o.code]||0) + 1; }));
@@ -1542,9 +1543,9 @@ function buildBook(){
       // column for audit. CANTEEN is the deduction, blank on a site without one.
       const ot = (e.ot!=null || e.nh!=null) ? totalOt(e) : null;
       rows.push([ {v:op.code}, op.name||'', op.father||'',
-                  e.wd!=null?+e.wd:null, ot, e.ab!=null?+e.ab:null,
-                  {v:op.account||''}, {v:op.ifsc||''},
-                  e.ca!=null?+e.ca:null ]);
+                  e.wd!=null?+e.wd:null, ot, e.ca!=null?+e.ca:null,
+                  e.ab!=null?+e.ab:null,
+                  {v:op.account||''}, {v:op.ifsc||''} ]);
     }
     return { name: site.name, rows, widths };
   });
