@@ -810,9 +810,15 @@ $('#opSave').addEventListener('click', ()=>{
     if(o===old) continue;
     if(o.code === code)
       return toast('EMP Code '+code+' already belongs to '+(o.name||'someone')+' at '+s.name, 4500);
-    if(account && trim(o.account) === account)
-      return toast('That account number already belongs to '+(o.name||'someone')+
-                   ' ('+(o.code||'no code')+') at '+s.name, 5000);
+    if(account && trim(o.account) === account){
+      // the same man posted at two sites keeps one account; a different man may not
+      if(s.id === destId)
+        return toast('That account is already on this site, under '+(o.name||'someone')+
+                     ' ('+(o.code||'no code')+')', 5000);
+      if(norm(o.name) !== norm(name))
+        return toast('That account belongs to '+(o.name||'someone')+
+                     ' ('+(o.code||'no code')+') at '+s.name, 5000);
+    }
   }
 
   const used = new Set(dest.operators.filter(o=>o!==old).map(opKey));

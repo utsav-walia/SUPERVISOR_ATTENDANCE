@@ -581,6 +581,7 @@ $('#supQ').addEventListener('input', renderSups);
 
 /* ------------------------------------------ rows the import rules refused */
 let rejects = [];
+let twoSite = [];        // one man, one account, two sites — allowed, but reported
 function rejCount(kind){ return rejects.filter(r=>r.kind===kind).length; }
 function renderRejects(){
   const panel=$('#rejPanel');
@@ -671,6 +672,7 @@ $('#masterRun').addEventListener('click', async ()=>{
 
     /* sweep B — judge */
     const seenCode = new Map(), seenAcct = new Map(), moved = [];
+    twoSite = [];
     for(const sheet of all){
       const recs = [];
       for(const row of sheet.rows){
@@ -698,15 +700,27 @@ $('#masterRun').addEventListener('click', async ()=>{
           continue;
         }
 
+        /* One account belongs to one MAN — not to one row. A man posted at two
+           sites holds two codes and one bank account, so the same number may
+           appear twice provided it is plainly the same man. Two different men
+           on one account is a data error and money going to the wrong place. */
         if(account){
           const aTwice = seenAcct.get(account);
           if(aTwice){
-            rejects.push(Object.assign({}, row, {kind:'account',
-              why:'Account number repeated — also on '+aTwice.name+' ('+aTwice.code+') at '+aTwice.site+' in this file'}));
-            continue;
+            if(aTwice.siteId === siteId){
+              rejects.push(Object.assign({}, row, {kind:'account',
+                why:'Account number used twice on this site — also on '+aTwice.name+' ('+aTwice.code+')'}));
+              continue;
+            }
+            if(norm(aTwice.name) !== norm(name)){
+              rejects.push(Object.assign({}, row, {kind:'account',
+                why:'Account number belongs to a different man — '+aTwice.name+' ('+aTwice.code+') at '+aTwice.site}));
+              continue;
+            }
+            twoSite.push({name, account, a:aTwice.site+' ('+aTwice.code+')', b:site+' ('+code+')'});
           }
           const aHeld = acctOwner.get(account);
-          if(aHeld && aHeld.code !== code && !stale(aHeld)){
+          if(aHeld && aHeld.code !== code && !stale(aHeld) && norm(aHeld.name) !== norm(name)){
             rejects.push(Object.assign({}, row, {kind:'account',
               why:'Account number already belongs to '+aHeld.name+' ('+aHeld.code+') at '+aHeld.site}));
             continue;
@@ -714,7 +728,7 @@ $('#masterRun').addEventListener('click', async ()=>{
         }
 
         seenCode.set(code, {site, name});
-        if(account) seenAcct.set(account, {site, name, code});
+        if(account && !seenAcct.has(account)) seenAcct.set(account, {site, siteId, name, code});
         recs.push(row);
       }
       parsed.push({id:sheet.id, clean:sheet.clean, recs});
@@ -767,8 +781,13 @@ $('#masterRun').addEventListener('click', async ()=>{
       site.operators.sort((a,b)=>
         (a.code||'').localeCompare(b.code||'',undefined,{numeric:true}));
     }
-    if(dropped.length || moved.length){
+    if(dropped.length || moved.length || twoSite.length){
       const book=[];
+      if(twoSite.length){
+        const rows=[['NAME','ACCOUNT NUMBER','LISTED AT','AND AT']];
+        twoSite.forEach(t=>rows.push([t.name, {v:t.account}, t.a, t.b]));
+        book.push({name:'ON TWO SITES', rows, widths:[26,22,28,28]});
+      }
       if(moved.length){
         const rows=[['CODE NO.','NAME','MOVED FROM','MOVED TO']];
         moved.forEach(m=>rows.push([{v:m.code}, m.name, m.from, m.to]));
@@ -785,9 +804,10 @@ $('#masterRun').addEventListener('click', async ()=>{
     renderAll();
     renderRejects();
     toast('Accepted — '+nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated'+
+          (twoSite.length?' · '+twoSite.length+' man/men on two sites':'')+
           (moved.length?' · '+moved.length+' moved site':'')+
           (dropped.length?' · '+dropped.length+' no longer listed':'')+
-          ((moved.length||dropped.length)?' · IMPORT_CHANGES.xlsx saved':'')+
+          ((moved.length||dropped.length||twoSite.length)?' · IMPORT_CHANGES.xlsx saved':'')+
           (skipped.length?' · skipped '+skipped.join(', '):''), 7000);
   }catch(err){ console.error(err); toast('Could not read the file: '+err.message, 5000); }
 });
