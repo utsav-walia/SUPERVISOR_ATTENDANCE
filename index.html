@@ -1059,7 +1059,29 @@ function openOp(key){
   $('#opDelete').style.display = op ? '' : 'none';
   show('#shOp');
 }
-$('#opSave').addEventListener('click', ()=>{
+/* A roster change is not attendance: it must never sit in a queue. Attendance
+   typed in a tunnel is this phone's own truth and waits to be sent, but adding
+   or removing a MAN has to be judged against every other site in the company —
+   only the sheet can do that. So it is refused outright with no signal, rather
+   than applied here and argued about later. */
+function rosterReady(){
+  if(!cloudOn()){ toast('This phone is not linked to head office yet.', 4000); return false; }
+  if(!navigator.onLine){
+    toast('No signal. Adding, changing or removing a man needs a connection — '+
+          'head office has to check the code and account against every site. '+
+          'Attendance still works offline.', 6500);
+    return false;
+  }
+  return true;
+}
+async function rosterCall(body){
+  setSync('busy','Saving…');
+  const d = await apiPost(Object.assign({action:'roster', s:DB.token}, body));
+  if(!d.ok) throw new Error(d.error||'refused');
+  return d;
+}
+
+$('#opSave').addEventListener('click', async ()=>{
   const code = trim($('#fCode').value).toUpperCase(), name = trim($('#fName').value);
   if(!name) return toast('Name is required');
   const destId = $('#fSite').value, dest = DB.sites.find(s=>s.id===destId);
@@ -1086,30 +1108,61 @@ $('#opSave').addEventListener('click', ()=>{
     }
   }
 
-  const used = new Set(dest.operators.filter(o=>o!==old).map(opKey));
-  const key = makeKey(code, name, used);
-  const data = { key, code, name, father:trim($('#fFather').value),
-                 account, ifsc:trim($('#fIfsc').value).toUpperCase() };
-  if(old){
-    const i = from.operators.indexOf(old);
-    if(destId===from.id) from.operators[i] = data;
-    else { from.operators.splice(i,1); dest.operators.push(data); }
-    if(editKey!==key || destId!==from.id){        // carry his entries across
+  const moving = !!old && destId !== from.id;
+  if(moving && !confirm('Move '+(code||name)+' to '+dest.name+'?\n\n'+
+      'The two sites can run different length months, so anything already '+
+      'recorded for him at '+from.name+' is removed.')) return;
+  if(!rosterReady()) return;
+
+  /* The sheet is the authority, not this screen. Nothing is changed here until
+     it has been stored company-wide — a man added on a phone and lost on the
+     next reload is worse than one that took a second to appear. */
+  const btn = $('#opSave'); btn.disabled = true;
+  try{
+    const d = await rosterCall({ op: old ? 'update' : 'add', site: from.id,
+      key: editKey || '', toSite: moving ? destId : '',
+      code, name, father: trim($('#fFather').value),
+      account, ifsc: trim($('#fIfsc').value).toUpperCase() });
+
+    const data = d.operator, key = data.key;
+    if(old){
+      const i = from.operators.indexOf(old);
+      if(!moving) from.operators[i] = data;
+      else { from.operators.splice(i,1); dest.operators.push(data); }
       for(const k of Object.keys(DB.entries)){
-        const [s,m,c]=k.split('|');
-        if(s===from.id && c===editKey){ DB.entries[destId+'|'+m+'|'+key]=DB.entries[k]; delete DB.entries[k]; }
+        const [s,m,c] = k.split('|');
+        if(s!==from.id || c!==editKey) continue;
+        // his figures follow a renamed code, but a move leaves them behind —
+        // the sheet has just removed them, so this phone must not keep them
+        if(moving) delete DB.entries[k];
+        else if(key!==editKey){ DB.entries[from.id+'|'+m+'|'+key]=DB.entries[k]; delete DB.entries[k]; }
       }
-    }
-  } else dest.operators.push(data);
-  save(); hide(); render(); toast(editKey?'Saved':'Operator added');
+    } else dest.operators.push(data);
+    save(); hide(); render(); setSync('ok','Saved');
+    toast(old ? (moving ? 'Moved to '+dest.name : 'Saved for everyone') : 'Added for everyone');
+  }catch(err){
+    setSync('bad','Refused');
+    toast(err.message || 'Head office refused that change', 6000);
+  }finally{ btn.disabled = false; }
 });
-$('#opDelete').addEventListener('click', ()=>{
+$('#opDelete').addEventListener('click', async ()=>{
   if(!editKey) return;
   const site=curSite(), op=site.operators.find(o=>opKey(o)===editKey);
-  if(!confirm('Delete '+((op&&(op.code||op.name))||editKey)+' and their entries?')) return;
-  site.operators = site.operators.filter(o=>opKey(o)!==editKey);
-  for(const k of Object.keys(DB.entries)){ const [s,,c]=k.split('|'); if(s===site.id && c===editKey) delete DB.entries[k]; }
-  save(); hide(); render(); toast('Deleted');
+  const who = (op&&(op.code||op.name))||editKey;
+  if(!confirm('Remove '+who+' from '+site.name+'?\n\n'+
+     'This is for everybody, not just this phone, and his attendance goes with him.')) return;
+  if(!rosterReady()) return;
+  const btn = $('#opDelete'); btn.disabled = true;
+  try{
+    const d = await rosterCall({ op:'delete', site: site.id, key: editKey });
+    site.operators = site.operators.filter(o=>opKey(o)!==editKey);
+    for(const k of Object.keys(DB.entries)){ const [s,,c]=k.split('|'); if(s===site.id && c===editKey) delete DB.entries[k]; }
+    save(); hide(); render(); setSync('ok','Saved');
+    toast('Removed'+(d.attendanceRemoved?' — with '+d.attendanceRemoved+' month(s) of attendance':''), 5000);
+  }catch(err){
+    setSync('bad','Refused');
+    toast(err.message || 'Head office refused that change', 6000);
+  }finally{ btn.disabled = false; }
 });
 
 /* sites */
