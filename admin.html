@@ -1555,11 +1555,14 @@ $('#supImport').addEventListener('click', async ()=>{
   }
 });
 
-$('#apiPull').addEventListener('click', async ()=>{
-  CFG.api=trim($('#apiUrl').value); CFG.key=trim($('#apiKey').value); saveCfg();
-  if(!CFG.api||!CFG.key) return toast('Enter the Web app URL and admin key first');
-  if(CFG.sites.length && !confirm('Replace what is on this screen with the sheet?\n\n'+
-      'Anything here that has not been uploaded will be lost.')) return;
+/* Loading from the sheet. One function, two callers: the ⇩ button, which asks
+   first because it throws away whatever is on screen, and the automatic pull on
+   opening, which is only ever allowed to run when there is nothing to throw
+   away. Keep them on one path — a second copy of this would drift. */
+async function pullFromSheet({ ask = true, quiet = false } = {}){
+  if(!CFG.api||!CFG.key){ if(!quiet) toast('Enter the Web app URL and admin key first'); return false; }
+  if(ask && CFG.sites.length && !confirm('Replace what is on this screen with the sheet?\n\n'+
+      'Anything here that has not been uploaded will be lost.')) return false;
   clog('<span class="dim">Loading from the sheet…</span>');
   try{
     const d = await apiCall({action:'adminConfig', k:CFG.key});
@@ -1580,8 +1583,21 @@ $('#apiPull').addEventListener('click', async ()=>{
       '   operators    '+ops,
       '   supervisors  '+CFG.supervisors.length];
     if(!CFG.base) out.push('', '<span class="warn">Set the app address below to rebuild the links.</span>');
-    clog(out); toast('Loaded '+CFG.sites.length+' sites from the sheet');
-  }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Load failed: '+err.message, 4500); }
+    clog(out);
+    toast(quiet ? 'Up to date with the sheet — '+CFG.sites.length+' sites, '+ops+' operators'
+                : 'Loaded '+CFG.sites.length+' sites from the sheet');
+    return true;
+  }catch(err){
+    clog('<span class="bad">✗ '+cesc(err.message)+'</span>');
+    toast(quiet ? 'Could not reach the sheet — working from this browser’s copy, which may be out of date. '+
+                  'Press ⇩ Load on the Cloud tab before you upload anything.'
+                : 'Load failed: '+err.message, quiet ? 7000 : 4500);
+    return false;
+  }
+}
+$('#apiPull').addEventListener('click', ()=>{
+  CFG.api=trim($('#apiUrl').value); CFG.key=trim($('#apiKey').value); saveCfg();
+  pullFromSheet({ ask:true });
 });
 
 /* ---------- download one month's attendance straight from the sheet ---------- */
@@ -1685,6 +1701,26 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
     'Press ⇧ Upload on the Cloud tab to send it.', 8000), 600);
 }
 renderAll();
+
+/* ------------------------------------------------- the sheet, on opening
+   This browser only ever holds a COPY. Two consoles drift apart the moment one
+   of them changes something, and because ⇧ Upload rewrites the sheet whole, the
+   stale one silently undoes the other's work — a man deleted here comes back
+   because that machine never heard about it. So: fetch the sheet on opening and
+   let the copy go.
+
+   It is skipped when this screen holds work that was never uploaded, because
+   that work exists nowhere else and pulling would destroy it. The red bar is
+   already asking for it, so nothing more is said. The ⇩ button is unchanged and
+   still throws the local copy away on request. */
+if(CFG.api && CFG.key){
+  if(!CFG.sites.length || isPushed()){
+    setTimeout(()=>pullFromSheet({ ask:false, quiet:true }), 0);
+  }else{
+    setTimeout(()=>toast('Not loading from the sheet — this screen has changes that were never uploaded. '+
+      'Press ⇧ Upload to send them, or ⇩ Load to throw them away.', 8000), 700);
+  }
+}
 </script>
 </body>
 </html>
