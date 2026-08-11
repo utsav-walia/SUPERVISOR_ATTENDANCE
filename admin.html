@@ -811,11 +811,16 @@ $('#masterRun').addEventListener('click', async ()=>{
     for(const sh of sheets){
       const h=findHeader(sh.rows); if(!h){ skipped.push(sh.name); continue; }
       const clean=cleanSiteName(sh.name);
-      // A site renamed in the console keeps its old id, so match on the name too —
-      // otherwise renaming CAVENDISH to CAVENDISH JK TYRE would build a second site
-      // and strand the supervisors and the attendance on the first.
-      const existing = CFG.sites.find(s=>s.id===slug(sh.name)) ||
-                       CFG.sites.find(s=>norm(s.name)===norm(clean));
+      // Matched on the Excel TAB NAME alone — exact, ignoring case, spacing and
+      // punctuation. The site's internal id is never consulted here: a tab called
+      // "CAVENDISH JK TYRE" will not match a site the console still calls
+      // "CAVENDISH", even though that site's id was originally built from that
+      // word. Rename one side to match the other, once, in the console's Sites
+      // tab or on the Excel tab itself — every import after that lines up on
+      // its own. This is deliberate: matching on id too used to let a sheet
+      // silently reattach to the wrong site whenever a name and its id drifted
+      // apart, which is exactly what created a duplicate CAVENDISH JK TYRE site.
+      const existing = CFG.sites.find(s=>norm(s.name)===norm(clean));
       const id = existing ? existing.id : slug(sh.name);
       const rows = [];
       for(let i=h.i+1;i<sh.rows.length;i++){
@@ -914,7 +919,7 @@ $('#masterRun').addEventListener('click', async ()=>{
     }
 
     /* ---- pass two: the file is clean, so apply it */
-    let nSites=0,nOps=0,nUpd=0; const dropped=[];
+    let nSites=0,nOps=0,nUpd=0; const dropped=[], newSiteNames=[];
 
     // take transferred men off their old site first, so no code exists twice midway
     for(const {recs} of parsed) for(const rec of recs){
@@ -929,7 +934,7 @@ $('#masterRun').addEventListener('click', async ()=>{
       // whatever it already has, so an import never undoes a decision made here.
       if(!site){ site={id, name:clean, std:stdForNewSite(clean),
                        canteen:canteenForNewSite(clean), canteenRate:0, operators:[]};
-                 CFG.sites.push(site); nSites++; }
+                 CFG.sites.push(site); nSites++; newSiteNames.push(clean); }
       else { site.name = clean;
              if(!(+site.std>0)) site.std = stdForNewSite(clean);
              if(site.canteen === undefined) site.canteen = canteenForNewSite(clean); }
@@ -975,7 +980,8 @@ $('#masterRun').addEventListener('click', async ()=>{
     }
     renderAll();
     renderRejects();
-    toast('Accepted — '+nSites+' new site(s), '+nOps+' new operators, '+nUpd+' updated'+
+    toast('Accepted — '+nSites+' new site(s)'+(newSiteNames.length?' ('+newSiteNames.join(', ')+')':'')+
+          ', '+nOps+' new operators, '+nUpd+' updated'+
           (twoSite.length?' · '+twoSite.length+' man/men on two sites':'')+
           (moved.length?' · '+moved.length+' moved site':'')+
           (dropped.length?' · '+dropped.length+' no longer listed':'')+
