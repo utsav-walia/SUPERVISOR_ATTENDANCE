@@ -714,10 +714,18 @@ const stdPinned = site => {
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
   const std = stdDays(siteId, ym);      // the month matters: February is 28
-  delete e.otM; delete e.abM;                       // legacy flags — no manual AB any more
+  delete e.abM;                                     // legacy flag — AB is never manual
   // Hard ceiling. A WD over the standard is not thrown away — those days are
-  // overtime, so they move into OT. This is what carries a site from a 30-day
-  // month to a 26-day one without a man losing four days' pay.
+  // overtime, so they move into OT. This branch is the BULK path — import,
+  // quick fill, and a site's standard-days changing — where e.wd can arrive
+  // here still raw and over std. It always adds onto whatever OT is already
+  // there, on purpose: it is restating pay already earned, not a fresh entry,
+  // so a manually protected OT figure (e.otM) still gets the extra days —
+  // moving a site from 30 to 26 must not quietly lose four days of a man's pay
+  // just because he also happened to have typed some OT of his own.
+  // Ordinary typing on the WD box never reaches this branch: the input
+  // handler below caps WD and works out OT itself, using the auto/manual
+  // split (e.otM) — see there for that half of the rule.
   if(e.wd != null && e.wd > std){
     e.ot = qty((+e.ot || 0) + (e.wd - std));
     e.wd = std;
@@ -894,12 +902,14 @@ function nhBar(e, hols){
         '<button data-nh="on">He worked it</button></div>';
 }
 
-/* WD is the only editable field. OT and AB are read-only result boxes. */
+/* WD and OT are both typed. AB is a read-only result box. OT shows 'auto'
+   whenever its figure is purely the WD-over-standard overflow that nobody
+   has typed over yet — the same convention as the canteen AMOUNT box. */
 function fld(e, std){
   if(!(std>0)) std = stdDays();
   return '<div class="inp wd"><label>WD</label>'+
       '<input type="number" inputmode="decimal" min="0" max="'+std+'" step="0.1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
-    '<div class="inp ot"><label>OT</label>'+
+    '<div class="inp ot"><label>OT'+(e.ot!=null && !e.otM ? ' <i>auto</i>' : '')+'</label>'+
       '<input type="number" inputmode="decimal" min="0" max="999" step="0.1" data-f="ot" placeholder="–" value="'+(e.ot==null?'':e.ot)+'"></div>'+
     '<div class="inp ab"><label>AB <i>auto</i></label>'+
       '<div class="out'+(e.ab==null?'':' set')+'" data-f="ab">'+(e.ab==null?'–':e.ab)+'</div></div>';
@@ -945,18 +955,60 @@ $('#list').addEventListener('input', e=>{
   const fieldName = inp.dataset.f;                        // WD and OT are both typed now
   const card = e.target.closest('.card'), code = card.dataset.key;
   const site = curSite().id, ym = curMonth();
+  const k = ekey(site, ym, code);
+  const otLabel = () => { const l = card.querySelector('.inp.ot label');
+    const ee = DB.entries[k]; if(l) l.innerHTML = 'OT'+(ee && ee.ot!=null && !ee.otM ? ' <i>auto</i>' : ''); };
 
-  // WD may not go past THIS SITE's standard month; overtime belongs in the OT box
-  const ceiling = fieldName === 'wd' ? stdDays(site) : 999;
-  let v = inp.value.trim();
-  if(v!==''){
-    const c = Math.max(0, Math.min(ceiling, qty(+v || 0)));
-    if(String(c)!==v && isFinite(+v)) inp.value = c;      // reflect clamping back to the field
-    if(fieldName === 'wd' && c < qty(+v || 0))
-      toast('WD cannot be more than '+ceiling+'. Put the extra days in OT.', 3400);
-    v = c;
+  if(fieldName === 'wd'){
+    // WD may not go past THIS SITE's standard month. The days beyond it are
+    // moved into OT automatically — OT = WD − standard — rather than asking
+    // the supervisor to type the overflow himself. He can still add his own
+    // OT on top or instead; see the 'ot' branch, which protects whatever he
+    // types from being overwritten the next time WD changes (e.otM), exactly
+    // like the canteen AMOUNT box protects a typed figure from the rate.
+    const std = stdDays(site);
+    let v = inp.value.trim();
+    if(v===''){
+      setEntry(site, ym, code, 'wd', '');
+      const ent = DB.entries[k];
+      if(ent && !ent.otM){ delete ent.ot; delete ent.otAuto; prune(k); save(); }
+    } else {
+      const raw = qty(+v || 0);
+      const capped = Math.max(0, Math.min(std, raw));
+      const over = Math.max(0, qty(raw - std));
+      if(String(capped)!==v && isFinite(+v)) inp.value = capped;
+      setEntry(site, ym, code, 'wd', capped);
+      const ent = DB.entries[k] || (DB.entries[k] = {});
+      if(!ent.otM){ if(over>0) ent.ot = over; else delete ent.ot; }
+      if(over>0) ent.otAuto = over; else delete ent.otAuto;   // what a cleared OT box falls back to
+      save();
+      const otBox = card.querySelector('input[data-f="ot"]');
+      if(otBox) otBox.value = ent.ot==null ? '' : ent.ot;
+      if(over>0) toast('WD capped at '+std+' — '+over+' day'+(over===1?'':'s')+' moved to OT'+
+                        (ent.otM ? ' (your OT figure is untouched)' : ' automatically')+'.', 3600);
+    }
+  } else {
+    // OT is his to type freely, any time, adding to or replacing the automatic
+    // figure. Typing anything protects it; clearing the box hands control
+    // back to the automatic WD-overflow figure, if there still is one.
+    let v = inp.value.trim();
+    if(v===''){
+      const ent = DB.entries[k];
+      if(ent){
+        delete ent.otM;
+        if(ent.otAuto) ent.ot = ent.otAuto; else delete ent.ot;
+        prune(k); save();
+      }
+      const cur = DB.entries[k];
+      inp.value = cur && cur.ot!=null ? cur.ot : '';
+    } else {
+      const c = Math.max(0, Math.min(999, qty(+v || 0)));
+      if(String(c)!==v && isFinite(+v)) inp.value = c;
+      setEntry(site, ym, code, 'ot', c);
+      const ent = DB.entries[k]; if(ent){ ent.otM = 1; save(); }
+    }
   }
-  setEntry(site, ym, code, fieldName, v===''?'':v);
+  otLabel();
   const ent = derive(site, ym, code);
 
   const box = card.querySelector('.out[data-f="ab"]');
