@@ -374,6 +374,9 @@ const $$ = s => [...document.querySelectorAll(s)];
 let toastT;
 function toast(m, ms=2600){ const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'), ms); }
 const norm = s => String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+// WD and OT are typed to one decimal place on the phone; rounding sums here
+// too keeps a SUMMARY total from showing 25.999999999999996 instead of 26.
+const qty = n => Math.round((+n||0)*10)/10;
 const trim = s => String(s==null?'':s).replace(/\s+/g,' ').trim();
 const esc  = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const cleanSiteName = s => trim(s).replace(/\s*\bOK\b\s*$/i,'').trim() || trim(s);
@@ -1241,7 +1244,7 @@ $('#mergeRun').addEventListener('click', async ()=>{
         if(!code && !nm0) continue;
         if(JUNK_CODE.test(norm(code))) continue;
         const rowKey = code || '~'+norm(nm0);
-        const num=k=>{const v=g(k); if(v===''||v===null) return null; const n=Math.round(Math.abs(+v)); return isFinite(n)?n:null;};
+        const num=k=>{const v=g(k); if(v===''||v===null) return null; const n=qty(Math.abs(+v)); return isFinite(n)?n:null;};
         const row={ code, name:trim(g('name')), father:trim(g('father')),
                     wd:num('wd'), ot:num('ot'), ab:num('ab'),
                     account:trim(g('account')), ifsc:trim(g('ifsc')).toUpperCase(), src:f.name };
@@ -1644,7 +1647,7 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const wd = r && r.wd!=null ? r.wd : null;
         // OT includes the national holidays he worked, exactly as the phone
         // exports it. The split stays in the sheet's nh column for audit.
-        const ot = r && (r.ot!=null || r.nh!=null) ? (+r.ot||0)+(+r.nh||0) : null;
+        const ot = r && (r.ot!=null || r.nh!=null) ? qty((+r.ot||0)+(+r.nh||0)) : null;
         const ab = r && r.ab!=null ? r.ab : null;
         // OT is typed separately now, so a man may have OT without WD
         const ca = r && r.ca!=null ? r.ca : null;
@@ -1656,7 +1659,7 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
       have.forEach((r,k)=>{ if(known.has(k)) return;
-        const ot = (r.ot!=null || r.nh!=null) ? (+r.ot||0)+(+r.nh||0) : null;
+        const ot = (r.ot!=null || r.nh!=null) ? qty((+r.ot||0)+(+r.nh||0)) : null;
         if(r.wd!=null || ot!=null || r.ca!=null) filled++;
         tWd+=r.wd||0; tOt+=ot||0; tAb+=r.ab||0; tCa+=r.ca||0;
         rows.push([{v:r.code||''}, r.name||'', r.father||'', r.wd, ot,
@@ -1667,8 +1670,8 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
       grandFilled+=filled; grandOps+=total;
       sheets.push({name:site.name, rows, widths});
       summary.push([site.name, supsOfSite(site.id).map(x=>x.name).join(', ')||'—',
-                    total, filled, total-filled, tWd, tOt,
-                    site.canteen ? Math.round(tCa*100)/100 : null, tAb,
+                    total, filled, total-filled, qty(tWd), qty(tOt),
+                    site.canteen ? Math.round(tCa*100)/100 : null, qty(tAb),
                     filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE')]);
     });
 

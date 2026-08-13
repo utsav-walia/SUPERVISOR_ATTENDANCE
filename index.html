@@ -281,7 +281,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 <div class="sheet" id="shFill">
   <div class="grab"></div><h2>Quick fill</h2>
   <div class="note">Sets WD for every operator on this site who has nothing entered yet for the selected month — AB follows from it. OT is left alone; type that man by man. Operators already filled in are untouched.</div>
-  <div class="form"><div class="field"><label>WD value</label><input type="number" id="fillVal" inputmode="numeric"></div></div>
+  <div class="form"><div class="field"><label>WD value</label><input type="number" id="fillVal" inputmode="decimal" step="0.1"></div></div>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="fillRun">Apply</button></div>
 </div>
 
@@ -599,6 +599,11 @@ function canteenRate(site){
   return (v>0 && isFinite(v)) ? v : 0;
 }
 const money = n => Math.round((+n||0)*100)/100;
+/* WD and OT are typed to one decimal place — a half day, or 21.6, is real
+   work and payroll wants it, not just whole days. Rounding here, once, at
+   every point a number enters or leaves the app is what keeps 26 - 25.6 from
+   coming out as 0.39999999999999947 on screen. */
+const qty = n => Math.round((+n||0)*10)/10;
 /** Works the amount out from the count, unless he typed one himself. */
 function deriveCanteen(siteId, ym, key){
   const k = ekey(siteId,ym,key), e = DB.entries[k]; if(!e) return {};
@@ -714,11 +719,11 @@ function derive(siteId, ym, code){
   // overtime, so they move into OT. This is what carries a site from a 30-day
   // month to a 26-day one without a man losing four days' pay.
   if(e.wd != null && e.wd > std){
-    e.ot = (+e.ot || 0) + (e.wd - std);
+    e.ot = qty((+e.ot || 0) + (e.wd - std));
     e.wd = std;
   }
   if(e.wd == null) delete e.ab;
-  else if(e.wd < std) e.ab = std - e.wd;
+  else if(e.wd < std) e.ab = qty(std - e.wd);
   else delete e.ab;
 
   /* National holidays. A man whose WD is the full standard was present every
@@ -839,6 +844,7 @@ function render(){
                (site.canteen ? '<div class="inputs canteen">'+ cfld(e, rate) +'</div>' : '') +
                nhBar(e, hols))+'</div>';
   }
+  tWd = qty(tWd); tOt = qty(tOt); tAb = qty(tAb);   // clears the float dust left by summing decimals
   $('#chips').innerHTML =
     '<span class="chip">Operators <b>'+payable+'</b></span>'+
     (blocked?'<span class="chip r">Blocked <b>'+blocked+'</b></span>':'')+
@@ -892,9 +898,9 @@ function nhBar(e, hols){
 function fld(e, std){
   if(!(std>0)) std = stdDays();
   return '<div class="inp wd"><label>WD</label>'+
-      '<input type="number" inputmode="numeric" min="0" max="'+std+'" step="1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
+      '<input type="number" inputmode="decimal" min="0" max="'+std+'" step="0.1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
     '<div class="inp ot"><label>OT</label>'+
-      '<input type="number" inputmode="numeric" min="0" max="999" step="1" data-f="ot" placeholder="–" value="'+(e.ot==null?'':e.ot)+'"></div>'+
+      '<input type="number" inputmode="decimal" min="0" max="999" step="0.1" data-f="ot" placeholder="–" value="'+(e.ot==null?'':e.ot)+'"></div>'+
     '<div class="inp ab"><label>AB <i>auto</i></label>'+
       '<div class="out'+(e.ab==null?'':' set')+'" data-f="ab">'+(e.ab==null?'–':e.ab)+'</div></div>';
 }
@@ -944,9 +950,9 @@ $('#list').addEventListener('input', e=>{
   const ceiling = fieldName === 'wd' ? stdDays(site) : 999;
   let v = inp.value.trim();
   if(v!==''){
-    const c = Math.max(0, Math.min(ceiling, Math.round(+v || 0)));
+    const c = Math.max(0, Math.min(ceiling, qty(+v || 0)));
     if(String(c)!==v && isFinite(+v)) inp.value = c;      // reflect clamping back to the field
-    if(fieldName === 'wd' && c < Math.round(+v || 0))
+    if(fieldName === 'wd' && c < qty(+v || 0))
       toast('WD cannot be more than '+ceiling+'. Put the extra days in OT.', 3400);
     v = c;
   }
@@ -989,6 +995,7 @@ function updateChips(){
     if(e.wd!=null||e.ot!=null||e.ab!=null) filled++;
     tWd+=(+e.wd||0); tOt+=totalOt(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0);
     tQty+=(+e.cq||0); tAmt+=(+e.ca||0); }
+  tWd = qty(tWd); tOt = qty(tOt); tAb = qty(tAb);   // clears the float dust left by summing decimals
   // matched on their own text rather than by position: the canteen and holiday
   // chips only exist on some sites, so an index would land on the wrong one
   for(const el of $('#chips').children){
@@ -1207,7 +1214,7 @@ $('#stdSave').addEventListener('click', ()=>{
 
 /* quick fill */
 $('#fillRun').addEventListener('click', ()=>{
-  const v = Math.round(+$('#fillVal').value||0);
+  const v = qty(+$('#fillVal').value||0);
   const site=curSite(), ym=curMonth(); let n=0;
   for(const op of site.operators){
     const k=opKey(op), e=getEntry(site.id,ym,k);
@@ -1536,7 +1543,7 @@ $('#impRun').addEventListener('click', async ()=>{
         const key = rec.key;
         if(withEntries){
           const num = key => { const raw=g(key); if(raw===''||raw===null) return null;
-                               const v=Math.round(Math.abs(+raw)); return isFinite(v)?v:null; };
+                               const v=qty(Math.abs(+raw)); return isFinite(v)?v:null; };
           const std = stdDays(site, ym);
           let wd = num('wd');
           if(wd==null){                       // no WD column filled — work it back from AB or OT
