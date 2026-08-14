@@ -97,11 +97,11 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 .meta{font-size:11.5px;color:var(--muted);margin:3px 0 9px;line-height:1.5;overflow-wrap:anywhere}
 .meta i{font-style:normal;opacity:.45;margin:0 5px}
 .meta .acct{font-variant-numeric:tabular-nums;letter-spacing:.4px;color:var(--ink);font-weight:600}
-.inputs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.inputs{display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .inp label{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;text-align:center;margin-bottom:3px}
-.inp.wd label{color:var(--wd)} .inp.ot label{color:var(--ot)} .inp.ab label{color:var(--ab)}
+.inp.wd label{color:var(--wd)} .inp.ab label{color:var(--ab)}
 .inp input{text-align:center;font-weight:600;font-size:16px;padding:8px 4px;border-radius:9px}
-.inp.wd input{border-color:#c4e3d2} .inp.ot input{border-color:#c3d6e8} .inp.ab input{border-color:#eecdca}
+.inp.wd input{border-color:#c4e3d2}
 .inp input:placeholder-shown{font-weight:400;color:var(--muted)}
 .inp label i{font-style:normal;font-weight:600;font-size:8.5px;letter-spacing:.4px;opacity:.55;vertical-align:1px}
 /* read-only, calculated fields */
@@ -110,8 +110,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
   border:1px dashed var(--line);background:#f7f9fb;color:var(--muted);
   user-select:none;-webkit-user-select:none;
 }
-.inp.ot .out{border-color:#c3d6e8} .inp.ab .out{border-color:#eecdca}
-.inp.ot .out.set{color:var(--ot);background:#eef4fa}
+.inp.ab .out{border-color:#eecdca}
 .inp.ab .out.set{color:var(--ab);background:#fdf0ef}
 .empty{text-align:center;color:var(--muted);padding:48px 24px;line-height:1.6}
 .fixbox{max-width:340px;margin:22px auto 0;text-align:left}
@@ -172,7 +171,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 
 <div class="appbar">
   <div style="flex:1">
-    <h1><span id="barTitle">Attendance CRM</span><span class="sub" id="barSub">Working Days · Overtime · Absent</span></h1>
+    <h1><span id="barTitle">Attendance CRM</span><span class="sub" id="barSub">Working Days · Absent</span></h1>
   </div>
   <button id="sync" title="Tap to sync now"><span class="dot"></span><span id="syncTxt">Synced</span></button>
   <button class="iconbtn" id="btnMenu" aria-label="Menu">☰</button>
@@ -241,7 +240,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
     are read automatically. Existing operators are matched by code and updated — nothing is lost.
   </div>
   <div class="form"><div class="field"><input type="file" id="fFile" accept=".xlsx,.xlsm"></div></div>
-  <label class="check"><input type="checkbox" id="impWdOt"> Also import WD and OT into the selected month (AB is recalculated)</label>
+  <label class="check"><input type="checkbox" id="impWdOt"> Also import WD into the selected month (AB is recalculated)</label>
   <label class="check"><input type="checkbox" id="impReplace"> Replace existing operator lists instead of merging</label>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="impRun">Import</button></div>
 </div>
@@ -251,7 +250,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
   <div class="grab"></div><h2>Export to Excel</h2>
   <div class="note" id="expSummary"></div>
   <label class="check"><input type="checkbox" id="expAll" checked> Include all sites (one sheet each)</label>
-  <label class="check"><input type="checkbox" id="expOnlyFilled"> Only include operators with WD, OT or AB entered</label>
+  <label class="check"><input type="checkbox" id="expOnlyFilled"> Only include operators with WD or AB entered</label>
   <div class="actions">
     <button class="btn" id="expSave">⤓ Save to phone</button>
     <button class="btn pri" id="expRun">Save &amp; share</button>
@@ -263,12 +262,11 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 <div class="sheet" id="shStd">
   <div class="grab"></div><h2>Standard month length</h2>
   <div class="note">
-    The supervisor types <b>WD</b> and <b>OT</b>. AB is worked out:<br>
+    The supervisor types <b>WD</b>. AB is worked out:<br>
     <span class="pill">AB = standard − WD</span>
-    <span class="pill">WD = standard → AB blank</span>
-    <span class="pill">WD can never exceed the standard</span><br>
-    Extra days go in the <b>OT</b> box, never into WD — a day must not count as
-    both worked and overtime. AB is calculated, not editable.
+    <span class="pill">WD = standard or more → AB blank</span><br>
+    WD is not capped at the standard — a man can be typed higher than it, and
+    AB is never negative. AB is calculated, not editable.
   </div>
   <div class="form"><div class="field"><label>Standard days for <b id="stdSite">this site</b></label><input type="number" id="stdVal" inputmode="numeric" min="0" max="31" placeholder="blank = length of the month"></div></div>
   <div class="note">Leave it <b>blank</b> and the site runs the real length of each month —
@@ -280,7 +278,7 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 <!-- quick fill -->
 <div class="sheet" id="shFill">
   <div class="grab"></div><h2>Quick fill</h2>
-  <div class="note">Sets WD for every operator on this site who has nothing entered yet for the selected month — AB follows from it. OT is left alone; type that man by man. Operators already filled in are untouched.</div>
+  <div class="note">Sets WD for every operator on this site who has nothing entered yet for the selected month — AB follows from it. Operators already filled in are untouched.</div>
   <div class="form"><div class="field"><label>WD value</label><input type="number" id="fillVal" inputmode="decimal" step="0.1"></div></div>
   <div class="actions"><button class="btn" data-close>Cancel</button><button class="btn pri" id="fillRun">Apply</button></div>
 </div>
@@ -576,16 +574,15 @@ function setEntry(siteId, ym, code, field, val){
 }
 function prune(k){
   const e = DB.entries[k]; if(!e) return;
-  if(e.ot==null) delete e.otM;                      // manual flags only live with a value
   if(e.ab==null) delete e.abM;
   // canteen counts as something worth keeping: a man may have canteen and no
   // attendance yet, and dropping the row here would lose it as he typed it
-  if(e.wd==null && e.ot==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
+  if(e.wd==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
 }
-/* What the man is actually paid overtime for: what the supervisor typed, plus
-   the national holidays he worked. Kept in one place so the screen, the export
-   and the sheet can never drift apart. */
-const totalOt = e => (+e.ot||0) + (+e.nh||0);
+/* What the man is actually credited for: what the supervisor typed, plus the
+   national holidays he worked, folded straight into WD. Kept in one place so
+   the screen, the export and the sheet can never drift apart. */
+const totalWd = e => (+e.wd||0) + (+e.nh||0);
 
 /* ---- canteen ------------------------------------------------------------
    Only some sites run a canteen, and a supervisor only ever sees his own, so
@@ -599,10 +596,10 @@ function canteenRate(site){
   return (v>0 && isFinite(v)) ? v : 0;
 }
 const money = n => Math.round((+n||0)*100)/100;
-/* WD and OT are typed to one decimal place — a half day, or 21.6, is real
-   work and payroll wants it, not just whole days. Rounding here, once, at
-   every point a number enters or leaves the app is what keeps 26 - 25.6 from
-   coming out as 0.39999999999999947 on screen. */
+/* WD is typed to one decimal place — a half day, or 21.6, is real work and
+   payroll wants it, not just whole days. Rounding here, once, at every point
+   a number enters or leaves the app is what keeps 26 - 25.6 from coming out
+   as 0.39999999999999947 on screen. */
 const qty = n => Math.round((+n||0)*10)/10;
 /** Works the amount out from the count, unless he typed one himself. */
 function deriveCanteen(siteId, ym, key){
@@ -614,7 +611,7 @@ function deriveCanteen(siteId, ym, key){
     else delete e.ca;
   }
   if(e.cq == null && e.ca == null){ delete e.cq; delete e.ca; delete e.caM; }
-  if(e.wd==null && e.ot==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
+  if(e.wd==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
   save();
   return DB.entries[k] || {};
 }
@@ -631,16 +628,15 @@ function prevMonth(from){
 }
 function curMonth(){ return DB.ui.month || prevMonth(); }
 
-/* ---- WD and OT are typed, AB is worked out -----------------------------
+/* ---- WD is typed, AB is worked out --------------------------------------
    The standard month belongs to the SITE, not to the phone: most sites are
    30 days, the duty sites head office contracted at 26 are 26. It arrives
    with the site from head office and is shown on every screen, so a
-   supervisor holding both kinds of site always sees the right ceiling.
+   supervisor holding both kinds of site always sees the right standard.
      AB = standard - WD   when WD is below the standard
-     AB is blank          when WD equals the standard
-   WD can never exceed the standard — extra days belong in OT, and letting a
-   day count as both worked and overtime is how payroll goes wrong. OT is
-   whatever the supervisor typed and is never touched. */
+     AB is blank          when WD is at or above the standard
+   WD is not capped at the standard — a man can be typed higher than it, and
+   AB is simply never negative. */
 /* ---- national holidays -------------------------------------------------
    Three fixed days, plus Holi and Diwali, which move with the Hindu
    lunisolar calendar and cannot be worked out from the Gregorian date.
@@ -715,31 +711,18 @@ function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
   const std = stdDays(siteId, ym);      // the month matters: February is 28
   delete e.abM;                                     // legacy flag — AB is never manual
-  // Hard ceiling. A WD over the standard is not thrown away — those days are
-  // overtime, so they move into OT. This branch is the BULK path — import,
-  // quick fill, and a site's standard-days changing — where e.wd can arrive
-  // here still raw and over std. It always adds onto whatever OT is already
-  // there, on purpose: it is restating pay already earned, not a fresh entry,
-  // so a manually protected OT figure (e.otM) still gets the extra days —
-  // moving a site from 30 to 26 must not quietly lose four days of a man's pay
-  // just because he also happened to have typed some OT of his own.
-  // Ordinary typing on the WD box never reaches this branch: the input
-  // handler below caps WD and works out OT itself, using the auto/manual
-  // split (e.otM) — see there for that half of the rule.
-  if(e.wd != null && e.wd > std){
-    e.ot = qty((+e.ot || 0) + (e.wd - std));
-    e.wd = std;
-  }
+  // WD is not capped at the standard any more — a man can be typed higher
+  // than it, and those days are simply not moved anywhere. AB only ever
+  // applies below the standard, and is never negative.
   if(e.wd == null) delete e.ab;
   else if(e.wd < std) e.ab = qty(std - e.wd);
   else delete e.ab;
 
-  /* National holidays. A man whose WD is the full standard was present every
-     day of the month, the holiday included, so he is given one overtime day
-     per holiday. It is held apart from the typed OT — never added into it —
-     because folding it in would double-count the moment a supervisor typed
-     the holiday himself, and would compound again every time this runs.
-     e.nhOff is the supervisor saying this man was off that day. */
+  /* National holidays. A man whose typed WD reaches the full standard was
+     present every day of the month, the holiday included, so he is credited
+     one extra WD day per holiday — folded straight into what he is paid for,
+     not tracked apart as overtime any more. e.nhOff is the supervisor saying
+     this man was actually off that day. */
   const hol = holidayCount(ym);
   if(hol && e.wd != null && e.wd >= std && !e.nhOff) e.nh = hol;
   else delete e.nh;
@@ -825,14 +808,14 @@ function render(){
         : '';
 
   const hols = holidaysIn(ym);
-  let filled=0, tWd=0, tOt=0, tAb=0, tNh=0, tQty=0, tAmt=0, html='', shown=0, blocked=0, payable=0;
+  let filled=0, tWd=0, tAb=0, tNh=0, tQty=0, tAmt=0, html='', shown=0, blocked=0, payable=0;
   for(const op of site.operators){
     const fault = faultOf(op);
     if(fault) blocked++; else payable++;
     const e = getEntry(site.id, ym, opKey(op));
-    const has = e.wd!=null || e.ot!=null || e.ab!=null;
+    const has = e.wd!=null || e.ab!=null;
     if(has && !fault) filled++;
-    if(!fault){ tWd += (+e.wd||0); tOt += totalOt(e); tAb += (+e.ab||0); tNh += (+e.nh||0);
+    if(!fault){ tWd += totalWd(e); tAb += (+e.ab||0); tNh += (+e.nh||0);
                 tQty += (+e.cq||0); tAmt += (+e.ca||0); }
     if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
               norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
@@ -852,17 +835,16 @@ function render(){
                (site.canteen ? '<div class="inputs canteen">'+ cfld(e, rate) +'</div>' : '') +
                nhBar(e, hols))+'</div>';
   }
-  tWd = qty(tWd); tOt = qty(tOt); tAb = qty(tAb);   // clears the float dust left by summing decimals
+  tWd = qty(tWd); tAb = qty(tAb);   // clears the float dust left by summing decimals
   $('#chips').innerHTML =
     '<span class="chip">Operators <b>'+payable+'</b></span>'+
     (blocked?'<span class="chip r">Blocked <b>'+blocked+'</b></span>':'')+
     '<span class="chip">Filled <b>'+filled+'/'+payable+'</b></span>'+
     '<span class="chip g">Total WD <b>'+tWd+'</b></span>'+
-    '<span class="chip b">Total OT <b>'+tOt+'</b></span>'+
     '<span class="chip r">Total AB <b>'+tAb+'</b></span>'+
     '<span class="chip'+(std!==30?' b':'')+'">Standard month <b>'+std+'</b></span>'+
     (hols.length ? '<span class="chip b" title="'+xmlEsc(holidayLabel(ym))+'">'+
-        xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b></span>' : '')+
+        xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' WD</b></span>' : '')+
     (site.canteen ? '<span class="chip g">Total meals <b>'+tQty+'</b></span>'+
         '<span class="chip b">Total ₹ <b>'+money(tAmt)+'</b></span>'+
         (rate ? '<span class="chip">Rate <b>₹'+rate+'</b></span>'
@@ -875,7 +857,7 @@ function render(){
   list.innerHTML = rateNote + (html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
     (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>');
 }
-/* The canteen row, shown under WD/OT/AB on a site that runs one. Meals is what
+/* The canteen row, shown under WD/AB on a site that runs one. Meals is what
    he counted; the amount follows the site rate unless he types over it. */
 function cfld(e, rate){
   const auto = e.ca!=null && !e.caM;
@@ -896,21 +878,17 @@ function nhBar(e, hols){
   if(!on && !e.nhOff) return '';                 // WD not full — the rule does not apply
   const names = hols.map(h=>h.name).join(' · ');
   return on
-    ? '<div class="nhbar on"><span>+'+e.nh+' OT · worked '+xmlEsc(names)+'</span>'+
+    ? '<div class="nhbar on"><span>+'+e.nh+' WD · worked '+xmlEsc(names)+'</span>'+
         '<button data-nh="off">He was off</button></div>'
-    : '<div class="nhbar off"><span>No holiday OT · '+xmlEsc(names)+'</span>'+
+    : '<div class="nhbar off"><span>No holiday credit · '+xmlEsc(names)+'</span>'+
         '<button data-nh="on">He worked it</button></div>';
 }
 
-/* WD and OT are both typed. AB is a read-only result box. OT shows 'auto'
-   whenever its figure is purely the WD-over-standard overflow that nobody
-   has typed over yet — the same convention as the canteen AMOUNT box. */
+/* WD is typed. AB is a read-only result box. */
 function fld(e, std){
   if(!(std>0)) std = stdDays();
   return '<div class="inp wd"><label>WD</label>'+
-      '<input type="number" inputmode="decimal" min="0" max="'+std+'" step="0.1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
-    '<div class="inp ot"><label>OT'+(e.ot!=null && !e.otM ? ' <i>auto</i>' : '')+'</label>'+
-      '<input type="number" inputmode="decimal" min="0" max="999" step="0.1" data-f="ot" placeholder="–" value="'+(e.ot==null?'':e.ot)+'"></div>'+
+      '<input type="number" inputmode="decimal" min="0" max="999" step="0.1" data-f="wd" placeholder="–" value="'+(e.wd==null?'':e.wd)+'"></div>'+
     '<div class="inp ab"><label>AB <i>auto</i></label>'+
       '<div class="out'+(e.ab==null?'':' set')+'" data-f="ab">'+(e.ab==null?'–':e.ab)+'</div></div>';
 }
@@ -951,64 +929,21 @@ $('#list').addEventListener('input', e=>{
     queue(site, key, ym);
     return;
   }
-  const inp = e.target.closest('input[data-f="wd"], input[data-f="ot"]'); if(!inp) return;
-  const fieldName = inp.dataset.f;                        // WD and OT are both typed now
+  const inp = e.target.closest('input[data-f="wd"]'); if(!inp) return;
   const card = e.target.closest('.card'), code = card.dataset.key;
   const site = curSite().id, ym = curMonth();
   const k = ekey(site, ym, code);
-  const otLabel = () => { const l = card.querySelector('.inp.ot label');
-    const ee = DB.entries[k]; if(l) l.innerHTML = 'OT'+(ee && ee.ot!=null && !ee.otM ? ' <i>auto</i>' : ''); };
 
-  if(fieldName === 'wd'){
-    // WD may not go past THIS SITE's standard month. The days beyond it are
-    // moved into OT automatically — OT = WD − standard — rather than asking
-    // the supervisor to type the overflow himself. He can still add his own
-    // OT on top or instead; see the 'ot' branch, which protects whatever he
-    // types from being overwritten the next time WD changes (e.otM), exactly
-    // like the canteen AMOUNT box protects a typed figure from the rate.
-    const std = stdDays(site);
-    let v = inp.value.trim();
-    if(v===''){
-      setEntry(site, ym, code, 'wd', '');
-      const ent = DB.entries[k];
-      if(ent && !ent.otM){ delete ent.ot; delete ent.otAuto; prune(k); save(); }
-    } else {
-      const raw = qty(+v || 0);
-      const capped = Math.max(0, Math.min(std, raw));
-      const over = Math.max(0, qty(raw - std));
-      if(String(capped)!==v && isFinite(+v)) inp.value = capped;
-      setEntry(site, ym, code, 'wd', capped);
-      const ent = DB.entries[k] || (DB.entries[k] = {});
-      if(!ent.otM){ if(over>0) ent.ot = over; else delete ent.ot; }
-      if(over>0) ent.otAuto = over; else delete ent.otAuto;   // what a cleared OT box falls back to
-      save();
-      const otBox = card.querySelector('input[data-f="ot"]');
-      if(otBox) otBox.value = ent.ot==null ? '' : ent.ot;
-      if(over>0) toast('WD capped at '+std+' — '+over+' day'+(over===1?'':'s')+' moved to OT'+
-                        (ent.otM ? ' (your OT figure is untouched)' : ' automatically')+'.', 3600);
-    }
+  // WD is his to type freely — it is no longer capped at the site's
+  // standard, so nothing here moves days anywhere else.
+  let v = inp.value.trim();
+  if(v===''){
+    setEntry(site, ym, code, 'wd', '');
   } else {
-    // OT is his to type freely, any time, adding to or replacing the automatic
-    // figure. Typing anything protects it; clearing the box hands control
-    // back to the automatic WD-overflow figure, if there still is one.
-    let v = inp.value.trim();
-    if(v===''){
-      const ent = DB.entries[k];
-      if(ent){
-        delete ent.otM;
-        if(ent.otAuto) ent.ot = ent.otAuto; else delete ent.ot;
-        prune(k); save();
-      }
-      const cur = DB.entries[k];
-      inp.value = cur && cur.ot!=null ? cur.ot : '';
-    } else {
-      const c = Math.max(0, Math.min(999, qty(+v || 0)));
-      if(String(c)!==v && isFinite(+v)) inp.value = c;
-      setEntry(site, ym, code, 'ot', c);
-      const ent = DB.entries[k]; if(ent){ ent.otM = 1; save(); }
-    }
+    const c = Math.max(0, qty(+v || 0));
+    if(String(c)!==v && isFinite(+v)) inp.value = c;
+    setEntry(site, ym, code, 'wd', c);
   }
-  otLabel();
   const ent = derive(site, ym, code);
 
   const box = card.querySelector('.out[data-f="ab"]');
@@ -1042,25 +977,24 @@ $('#list').addEventListener('click', e=>{
 });
 function updateChips(){
   const site=curSite(), ym=curMonth(); if(!site) return;
-  let filled=0,tWd=0,tOt=0,tAb=0,tNh=0,tQty=0,tAmt=0;
+  let filled=0,tWd=0,tAb=0,tNh=0,tQty=0,tAmt=0;
   for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
-    if(e.wd!=null||e.ot!=null||e.ab!=null) filled++;
-    tWd+=(+e.wd||0); tOt+=totalOt(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0);
+    if(e.wd!=null||e.ab!=null) filled++;
+    tWd+=totalWd(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0);
     tQty+=(+e.cq||0); tAmt+=(+e.ca||0); }
-  tWd = qty(tWd); tOt = qty(tOt); tAb = qty(tAb);   // clears the float dust left by summing decimals
+  tWd = qty(tWd); tAb = qty(tAb);   // clears the float dust left by summing decimals
   // matched on their own text rather than by position: the canteen and holiday
   // chips only exist on some sites, so an index would land on the wrong one
   for(const el of $('#chips').children){
     const t = el.textContent;
     if(/^Filled/.test(t))           el.innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
     else if(/^Total WD/.test(t))    el.innerHTML='Total WD <b>'+tWd+'</b>';
-    else if(/^Total OT/.test(t))    el.innerHTML='Total OT <b>'+tOt+'</b>';
     else if(/^Total AB/.test(t))    el.innerHTML='Total AB <b>'+tAb+'</b>';
     else if(/^Total meals/.test(t)) el.innerHTML='Total meals <b>'+tQty+'</b>';
     else if(/^Total ₹/.test(t))     el.innerHTML='Total ₹ <b>'+money(tAmt)+'</b>';
   }
   const hc = $('#chips').querySelector('.chip[title]');
-  if(hc) hc.innerHTML = xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' OT</b>';
+  if(hc) hc.innerHTML = xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' WD</b>';
 }
 
 /* menu */
@@ -1258,7 +1192,7 @@ $('#stdSave').addEventListener('click', ()=>{
   if(raw!=='' && !(v>0 && v<=31)) return toast('Enter 1 to 31, or leave it blank for the length of the month');
   site.std = v; save();
   const n = deriveAll(true);
-  // WD now over the ceiling has been capped; the days it lost are overtime
+  // AB (and the holiday credit into WD) are re-derived against the new standard
   hide(); render();
   toast(site.name+(v ? ' fixed at '+v+' days' : ' now runs the length of each month')+
         ' · '+n+' entr'+(n===1?'y':'ies')+' recalculated', 4600);
@@ -1270,7 +1204,7 @@ $('#fillRun').addEventListener('click', ()=>{
   const site=curSite(), ym=curMonth(); let n=0;
   for(const op of site.operators){
     const k=opKey(op), e=getEntry(site.id,ym,k);
-    if(e.wd==null && e.ot==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); queue(site.id,k,ym); n++; }
+    if(e.wd==null && e.ab==null){ setEntry(site.id,ym,k,'wd',v); derive(site.id,ym,k); queue(site.id,k,ym); n++; }
   }
   hide(); render(); toast(n+' operator'+(n===1?'':'s')+' set to WD '+v);
 });
@@ -1414,7 +1348,6 @@ async function cloudBootstrap(silent){
       if(DB.pending && DB.pending[ym+'|'+site+'|'+key]) continue;   // local edit not yet sent — keep it
       const k = site+'|'+ym+'|'+key;
       DB.entries[k] = { wd: val.wd };
-      if(val.ot != null) DB.entries[k].ot = val.ot;             // OT is typed, so it comes back too
       // the sheet remembers a man turned off for the holiday; without this the
       // rule would hand it straight back to him on every reload
       if(val.wd != null && val.nh === 0) DB.entries[k].nhOff = 1;
@@ -1490,7 +1423,7 @@ async function flush(force){
         const e = getEntry(site, ym, key);
         // nh is sent explicitly so the supervisor's "he was off" decision survives;
         // without it the server would apply the default rule and give it straight back
-        return { site, key, wd: e.wd==null ? null : e.wd, ot: e.ot==null ? null : e.ot,
+        return { site, key, wd: e.wd==null ? null : e.wd,
                  nh: e.nh==null ? 0 : e.nh,
                  cq: e.cq==null ? null : e.cq, ca: e.ca==null ? null : e.ca,
                  caM: e.caM ? 1 : 0 };
@@ -1620,8 +1553,8 @@ $('#impRun').addEventListener('click', async ()=>{
 });
 
 /* -------------------------------------------------------------- export */
-// CANTEEN sits between OT and AB — the order payroll reads them in
-const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
+// CANTEEN sits between WD and AB — the order payroll reads them in
+const COLS = ['CODE NO.','NAME','FATHER NAME','WD','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
 function openExport(){
   const site=curSite(), ym=curMonth();
   if(!site) return toast('Nothing to export yet');
@@ -1640,7 +1573,7 @@ function canShareFiles(){
 function buildBook(){
   const ym = curMonth(), all = $('#expAll').checked, onlyFilled = $('#expOnlyFilled').checked;
   const sites = all ? DB.sites : [curSite()];
-  const widths = [11,26,26,7,7,10,7,22,15];
+  const widths = [11,26,26,7,10,7,22,15];
   const seen = {};
   DB.sites.forEach(s => s.operators.forEach(o => {
     if(o.code) seen[o.code] = (seen[o.code]||0) + 1; }));
@@ -1649,13 +1582,14 @@ function buildBook(){
     for(const op of site.operators){
       if(!op.code || seen[op.code] > 1) continue;   // no code, or a shared one: not payable
       const e = getEntry(site.id, ym, opKey(op));
-      const has = e.wd!=null || e.ot!=null || e.ab!=null || e.cq!=null || e.ca!=null;
+      const has = e.wd!=null || e.ab!=null || e.cq!=null || e.ca!=null;
       if(onlyFilled && !has) continue;
-      // OT carries the holidays he worked. The split is kept in the sheet's nh
-      // column for audit. CANTEEN is the deduction, blank on a site without one.
-      const ot = (e.ot!=null || e.nh!=null) ? totalOt(e) : null;
+      // The holiday credit is folded straight into WD — the split is kept in
+      // the sheet's nh column for audit. CANTEEN is the deduction, blank on a
+      // site without one.
+      const wd = (e.wd!=null || e.nh!=null) ? totalWd(e) : null;
       rows.push([ {v:op.code}, op.name||'', op.father||'',
-                  e.wd!=null?+e.wd:null, ot, e.ca!=null?+e.ca:null,
+                  wd, e.ca!=null?+e.ca:null,
                   e.ab!=null?+e.ab:null,
                   {v:op.account||''}, {v:op.ifsc||''} ]);
     }
