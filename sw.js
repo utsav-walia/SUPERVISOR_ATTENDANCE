@@ -10,7 +10,7 @@
  *      lookups keep matching the plain ./ entry, the phone serves the install-time
  *      app for ever and no fix ever reaches it. This bit is load-bearing.
  */
-const CACHE = 'attendance-crm-v16';  // v16: the pencil stays on a barred man, so his code can be fixed
+const CACHE = 'attendance-crm-v17';  // v17: holiday credit switched off on every site (HOLIDAYS_ON = false)
 const ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'

@@ -569,6 +569,11 @@ const DUTY_26_SITES = [
    Only years verified against agreeing sources are here; from 2032 the
    almanacs disagree by roughly a month over an adhik maas, so head office
    sets those from the Holidays panel and the override always wins. */
+/* Head office's decision: NO holiday credit, on any site. With this false the
+   month download reads WD exactly as the supervisor typed it and ignores the
+   sheet's nh column, and the holidays panel is closed. The same switch lives
+   in Code.gs and index.html — flip all three together, and bump sw.js. */
+const HOLIDAYS_ON = false;
 const FIXED_HOLIDAYS = [
   { md:'01-26', key:'Republic Day',     name:'Republic Day' },
   { md:'08-15', key:'Independence Day', name:'Independence Day' },
@@ -1155,6 +1160,17 @@ const MONTHNAMES = ['January','February','March','April','May','June','July',
                     'August','September','October','November','December'];
 function renderHolidays(){
   const el = $('#holTable'); if(!el) return;
+  if(!HOLIDAYS_ON){
+    for(const id of ['holYear','holReset']){ const x=$('#'+id); if(x) x.hidden=true; }
+    const hint = el.parentElement && el.parentElement.querySelector('.hint');
+    if(hint) hint.hidden = true;
+    el.innerHTML = '<p class="hint"><b>Holiday credit is switched off for every site.</b> '+
+      'WD reaches payroll exactly as the supervisor typed it — no day is added for 26 January, '+
+      '15 August, 2 October, Holi or Diwali, on any site. The dates below are not in use. '+
+      'Anything already in the sheet\'s <code>nh</code> column is kept for history but no '+
+      'export reads it.</p>';
+    return;
+  }
   const year = Math.round(+$('#holYear').value||0);
   if(!(year>=2024 && year<=2099)){ el.innerHTML=''; return; }
   const rows = holidaysOfYear(year).map(h=>{
@@ -1646,7 +1662,7 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const r = have.get(String(opKey(op)));
         // The holiday credit is folded straight into WD, exactly as the phone
         // exports it. The split stays in the sheet's nh column for audit.
-        const wd = r && (r.wd!=null || r.nh!=null) ? qty((+r.wd||0)+(+r.nh||0)) : null;
+        const wd = r && (r.wd!=null || (HOLIDAYS_ON && r.nh!=null)) ? qty((+r.wd||0)+(HOLIDAYS_ON?(+r.nh||0):0)) : null;
         const ab = r && r.ab!=null ? r.ab : null;
         const ca = r && r.ca!=null ? r.ca : null;
         if(wd!=null || ca!=null) filled++;
@@ -1657,7 +1673,7 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
       have.forEach((r,k)=>{ if(known.has(k)) return;
-        const wd = (r.wd!=null || r.nh!=null) ? qty((+r.wd||0)+(+r.nh||0)) : null;
+        const wd = (r.wd!=null || (HOLIDAYS_ON && r.nh!=null)) ? qty((+r.wd||0)+(HOLIDAYS_ON?(+r.nh||0):0)) : null;
         if(wd!=null || r.ca!=null) filled++;
         tWd+=wd||0; tAb+=r.ab||0; tCa+=r.ca||0;
         rows.push([{v:r.code||''}, r.name||'', r.father||'', wd,

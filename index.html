@@ -583,7 +583,7 @@ function prune(k){
 /* What the man is actually credited for: what the supervisor typed, plus the
    national holidays he worked, folded straight into WD. Kept in one place so
    the screen, the export and the sheet can never drift apart. */
-const totalWd = e => (+e.wd||0) + (+e.nh||0);
+const totalWd = e => (+e.wd||0) + (HOLIDAYS_ON ? (+e.nh||0) : 0);
 
 /* ---- canteen ------------------------------------------------------------
    Only some sites run a canteen, and a supervisor only ever sees his own, so
@@ -651,6 +651,11 @@ function curMonth(){ return DB.ui.month || prevMonth(); }
    fills them in from the console, and a console entry always wins.
 
    The same table lives in Code.gs and admin.html. Change one, change all. */
+/* Head office's decision: NO holiday credit, on any site. With this false
+   holidaysIn() answers "none" for every month, so no card shows the holiday
+   line, nothing is folded into WD and nh is always sent as 0. The same
+   switch lives in Code.gs and admin.html — flip all three together. */
+const HOLIDAYS_ON = false;
 const FIXED_HOLIDAYS = [
   { md:'01-26', key:'Republic Day',     name:'Republic Day' },
   { md:'08-15', key:'Independence Day', name:'Independence Day' },
@@ -666,6 +671,7 @@ const LUNAR_HOLIDAYS = {
 };
 /** [{date:'YYYY-MM-DD', name:'…'}] for one 'YYYY-MM'. */
 function holidaysIn(ym){
+  if(!HOLIDAYS_ON) return [];                       // credit switched off company-wide
   if(!/^\d{4}-\d{2}$/.test(ym||'')) return [];
   const year = ym.slice(0,4), mm = ym.slice(5,7);
   const over = (DB.holidayOverrides||{})[year] || {};
@@ -1353,7 +1359,7 @@ async function cloudBootstrap(silent){
       DB.entries[k] = { wd: val.wd };
       // the sheet remembers a man turned off for the holiday; without this the
       // rule would hand it straight back to him on every reload
-      if(val.wd != null && val.nh === 0) DB.entries[k].nhOff = 1;
+      if(HOLIDAYS_ON && val.wd != null && val.nh === 0) DB.entries[k].nhOff = 1;
       if(val.cq != null) DB.entries[k].cq = val.cq;
       if(val.ca != null) DB.entries[k].ca = val.ca;
       if(val.caM) DB.entries[k].caM = 1;
@@ -1590,7 +1596,7 @@ function buildBook(){
       // The holiday credit is folded straight into WD — the split is kept in
       // the sheet's nh column for audit. CANTEEN is the deduction, blank on a
       // site without one.
-      const wd = (e.wd!=null || e.nh!=null) ? totalWd(e) : null;
+      const wd = (e.wd!=null || (HOLIDAYS_ON && e.nh!=null)) ? totalWd(e) : null;
       rows.push([ {v:op.code}, op.name||'', op.father||'',
                   wd, e.ca!=null?+e.ca:null,
                   e.ab!=null?+e.ab:null,
