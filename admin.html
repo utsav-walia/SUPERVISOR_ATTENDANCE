@@ -562,7 +562,16 @@ const DUTY_26_SITES = [
   'POLYPLEX',                                   // Polyplex Khatima
   'SAMSUNG','SAMSUNG ENNORE',                   // SAMSUNG 1 and 2
   'SUDAMA WOOD',
-  'CANDOR SONA ROAD','CANDOR'
+  'CANDOR SONA ROAD','CANDOR',
+  // Sept 2026 — brought in line with the HR app, whose rule for these is final
+  'EASTMAN',
+  'DLF N1 & N2','DLF N1 N2','DLF N1 GGN','DLF_N1_GGN','DLF N1'
+];
+/* Sites on a FLAT 30-day month whatever the calendar says — February and a
+   31-day month alike. Same as the HR app (Sept 2026). Same list in Code.gs. */
+const FIXED_30_SITES = [
+  'IGL GORAKHPUR','IGL (GORAKHPUR)',
+  'KAJARIYA RAJASTHAN','KAJARIYA (RAJ)','KAJARIYA RAJ','KAJARIA RAJASTHAN'
 ];
 /* ------------------------------------------------------ national holidays
    The same table as Code.gs and index.html. Change one, change all.
@@ -621,9 +630,11 @@ const CANTEEN_SITES = [
   'MERINO BAHADURGARH'
 ];
 const DUTY_26 = new Set(DUTY_26_SITES.map(nameKey));
-/** What a brand new site should be pinned to — 26 on a duty site, otherwise
-    nothing at all, meaning it runs the real length of each month. */
-const stdForNewSite = name => DUTY_26.has(nameKey(name)) ? 26 : 0;
+const FIXED_30 = new Set(FIXED_30_SITES.map(nameKey));
+/** What a brand new site should be pinned to — 26 on a duty site, 30 on a
+    fixed-30 site, otherwise nothing at all, meaning it runs the real length
+    of each month. */
+const stdForNewSite = name => DUTY_26.has(nameKey(name)) ? 26 : FIXED_30.has(nameKey(name)) ? 30 : 0;
 /** How many days the calendar gives a month. 'YYYY-MM' -> 28..31. */
 function daysInMonth(ym){
   if(!/^\d{4}-\d{2}$/.test(ym||'')) return 30;
@@ -672,8 +683,19 @@ function backfillStd(){
   // default. Those are released to follow the calendar, once. A site pinned to
   // anything else, 26 included, is a decision and is left alone.
   if(!CFG.calendarMigrated){
-    CFG.sites.forEach(s=>{ if(+s.std === 30 && !DUTY_26.has(nameKey(s.name))){ s.std = 0; n++; } });
+    CFG.sites.forEach(s=>{ if(+s.std === 30 && !stdForNewSite(s.name)){ s.std = 0; n++; } });
     CFG.calendarMigrated = 1;
+  }
+  // Sept 2026: EASTMAN and DLF N1 & N2 go to 26, IGL GORAKHPUR and KAJARIYA
+  // RAJASTHAN to a flat 30 — the HR app's rule for them is final. Applied once,
+  // and only to a site still on the calendar or on the old flat 30; a number
+  // set by hand is left alone.
+  if(!CFG.pins2026Migrated){
+    CFG.sites.forEach(s=>{
+      const pin = stdForNewSite(s.name);
+      if(pin && (!s.std || +s.std === 30) && +s.std !== pin){ s.std = pin; n++; }
+    });
+    CFG.pins2026Migrated = 1;
   }
   if(n) saveCfg();
   return n;
