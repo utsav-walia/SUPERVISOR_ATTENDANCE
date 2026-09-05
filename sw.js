@@ -10,7 +10,7 @@
  *      lookups keep matching the plain ./ entry, the phone serves the install-time
  *      app for ever and no fix ever reaches it. This bit is load-bearing.
  */
-const CACHE = 'attendance-crm-v19';  // v19: OT HOURS box on the sites that pay overtime by the hour (BALAJI, IGL KASHIPUR) and the ninth export column that carries it
+const CACHE = 'attendance-crm-v19';  // v19 (never released): OT HOURS on the five hourly sites, the ninth export column, and the per-man month exception at SOMANY HR. Phones are still on v17, so this one number carries the whole September batch.
 const ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'

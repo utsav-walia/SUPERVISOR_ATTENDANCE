@@ -774,6 +774,14 @@ function renderSites(){
   }).join('');
   const n26 = CFG.sites.filter(s=>sitePin(s)).length;
   const noRate = CFG.sites.filter(s=>s.canteen && !siteRate(s));
+  /* Men head office has put on a month length of their own. It is held in the
+     code (OP_FIXED_DAYS in Code.gs), never in the sheet, so nothing here can
+     change it — this is a read-out, so the exception is at least visible. */
+  const ownStd = [];
+  CFG.sites.forEach(s=>(s.operators||[]).forEach(o=>{
+    const v = +o.std;
+    if(v>0 && v<=31 && v!==sitePin(s)) ownStd.push({site:s.name, code:o.code||opKey(o), name:o.name||'', std:v});
+  }));
   el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th>'+
     '<th class="right">Month</th><th class="right">Canteen</th><th class="right">OT</th>'+
     '<th>Supervisor</th><th></th>'+
@@ -781,6 +789,12 @@ function renderSites(){
     '<p class="hint" style="padding:10px 14px 0;margin:0"><b>calendar</b> means the site runs the real '+
       'length of each month — 28 in February, 31 in August — and that is the standard AB is worked out against. '+
       (n26?n26+' site(s) are pinned to a fixed number instead, whatever the month.':'')+'</p>'+
+    (ownStd.length?'<p class="hint" style="padding:10px 14px 0;margin:0">'+
+        '<b>'+ownStd.length+' man'+(ownStd.length===1?'':'men')+' on a month of their own:</b> '+
+        ownStd.map(x=>esc(x.code)+' '+esc(x.name)+' at '+esc(x.site)+' — <b>'+x.std+' days</b>').join(' · ')+
+        '. Their AB is worked out against that number instead of their site\'s, and the HR app '+
+        'divides their salary by it. Head office sets this in the code, not here, so an import '+
+        'cannot disturb it.</p>':'')+
     (noRate.length?'<p class="hint" style="padding:10px 14px;margin:0;color:#b3261e">'+
         '<b>'+noRate.length+' canteen site(s) have no rate:</b> '+
         noRate.map(s=>esc(s.name)).join(', ')+'. The supervisor can count meals but the '+

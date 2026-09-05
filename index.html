@@ -90,6 +90,8 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 .inp.oth input{border-color:#c3d6f2;font-weight:700}
 .inp.meals label{color:#7a5b00} .inp.amt label{color:#7a5b00}
 .inp.meals input{border-color:#e6d5a8} .inp.amt input{border-color:#e6d5a8;font-weight:700}
+.stdnote{margin-top:7px;padding:6px 10px;border-radius:8px;background:#eef1fb;
+  color:#3a4a7a;font-size:11.5px;font-weight:700;line-height:1.35}
 .ratenote{margin-top:8px;padding:9px 10px;border-radius:9px;background:#fff6e5;
   color:#8a5a00;font-size:12px;font-weight:600;line-height:1.4}
 .card.warn{border-color:#f0d9a8}
@@ -731,9 +733,22 @@ const stdPinned = site => {
   const v = s ? +s.std : 0;
   return (v>0 && v<=31) ? v : 0;
 };
+/* A handful of men are contracted on a month length of their own while the rest
+   of their site runs the site's. It arrives on the man with everything else —
+   head office holds the list, the phone only obeys it — and 0 means he follows
+   his site like everybody else. His AB is worked out against HIS number. */
+function opStdOf(op, site, ym){
+  const v = op ? +op.std : 0;
+  return (v>0 && v<=31) ? v : stdDays(site, ym);
+}
+function opStdBy(siteId, ym, key){
+  const s = typeof siteId === 'string' ? DB.sites.find(x=>x.id===siteId) : siteId;
+  const o = s && s.operators.find(x=>opKey(x)===key);
+  return opStdOf(o, s, ym);
+}
 function derive(siteId, ym, code){
   const k = ekey(siteId,ym,code), e = DB.entries[k]; if(!e) return {};
-  const std = stdDays(siteId, ym);      // the month matters: February is 28
+  const std = opStdBy(siteId, ym, code);   // his own if he has one, else the site's
   delete e.abM;                                     // legacy flag — AB is never manual
   // WD is not capped at the standard any more — a man can be typed higher
   // than it, and those days are simply not moved anywhere. AB only ever
@@ -858,7 +873,8 @@ function render(){
       '<button class="editbtn'+(fault?' fix':'')+'" data-edit="'+xmlEsc(opKey(op))+'">✎</button></div>'+
       '<div class="meta">'+(meta||'—')+'</div>'+
       (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
-             : '<div class="inputs">'+ fld(e, std) +'</div>' +
+             : '<div class="inputs">'+ fld(e, opStdOf(op, site, ym)) +'</div>' +
+               stdNote(op, site, ym) +
                (site.ot ? '<div class="inputs ot">'+ ofld(e) +'</div>' : '') +
                (site.canteen ? '<div class="inputs canteen">'+ cfld(e, rate) +'</div>' : '') +
                nhBar(e, hols))+'</div>';
@@ -920,6 +936,15 @@ function nhBar(e, hols){
         '<button data-nh="off">He was off</button></div>'
     : '<div class="nhbar off"><span>No holiday credit · '+xmlEsc(names)+'</span>'+
         '<button data-nh="on">He worked it</button></div>';
+}
+
+/* A man on a month of his own gets it said on his card. Without this his AB
+   silently disagrees with the site's standard chip and reads as a bug. */
+function stdNote(op, site, ym){
+  const own = op ? +op.std : 0;
+  if(!(own>0 && own<=31)) return '';
+  if(own === stdDays(site, ym)) return '';        // same as the site: nothing to say
+  return '<div class="stdnote">'+own+'-day month for this man · AB is '+own+' − WD</div>';
 }
 
 /* WD is typed. AB is a read-only result box. */
