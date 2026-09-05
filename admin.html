@@ -354,6 +354,12 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
     <p class="muted" style="font-size:12.5px;margin:0">The supervisor gets a <b>Canteen</b> tab for this site and
       counts meals per man; the rate turns that into rupees. He can type an amount instead, which overrides the
       rate for that man. Without a rate he can only type amounts. It reaches payroll as the <b>CANTEEN</b> column.</p>
+    <div class="f">
+      <label>Supervisors <span class="muted" id="stSupSel" style="text-transform:none;letter-spacing:0"></span></label>
+      <div class="sitegrid" id="stSups" style="max-height:220px"></div>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:0">Tick every man who marks attendance on this site. His personal
+      link shows it the next time his phone pulls, after you press ⇧ Upload. Untick and it leaves his phone the same way.</p>
   </div>
   <div class="foot">
     <button class="btn dgr" id="siteDel">Delete</button>
@@ -1031,7 +1037,37 @@ function openSite(id){
   $('#stCanteen').checked = s ? !!s.canteen : false;
   $('#stRate').value = s && siteRate(s) ? siteRate(s) : '';
   $('#siteDel').style.display = s?'':'none';
+  pickSups = new Set(s ? supsOfSite(s.id).map(x=>x.id) : []);
+  drawSupPicker();
   $('#dlgSite').showModal();
+}
+/* who marks attendance on this site — the other side of the Supervisors tab's picker */
+let pickSups=new Set();
+function drawSupPicker(){
+  const list=CFG.supervisors.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  $('#stSups').innerHTML = list.length ? list.map(x=>
+    '<label class="'+(pickSups.has(x.id)?'on':'')+'">'+
+      '<input type="checkbox" value="'+x.id+'"'+(pickSups.has(x.id)?' checked':'')+'>'+
+      '<span><b>'+esc(x.name)+'</b><small>'+x.siteIds.length+' site'+(x.siteIds.length===1?'':'s')+
+      (x.phone?' · '+esc(x.phone):'')+'</small></span></label>').join('')
+    : '<div class="muted" style="padding:14px">No supervisors yet — add them on tab 2.</div>';
+  $('#stSups').querySelectorAll('input').forEach(c=>c.addEventListener('change',()=>{
+    if(c.checked) pickSups.add(c.value); else pickSups.delete(c.value);
+    c.closest('label').classList.toggle('on', c.checked);
+    countSupPicked();
+  }));
+  countSupPicked();
+}
+function countSupPicked(){
+  const names=[...pickSups].map(i=>(CFG.supervisors.find(x=>x.id===i)||{}).name).filter(Boolean);
+  $('#stSupSel').textContent = names.length ? '— '+names.join(', ') : '— nobody yet';
+}
+function applySupPick(siteId){
+  CFG.supervisors.forEach(x=>{
+    const has=x.siteIds.includes(siteId), want=pickSups.has(x.id);
+    if(want && !has) x.siteIds.push(siteId);
+    if(!want && has) x.siteIds=x.siteIds.filter(i=>i!==siteId);
+  });
 }
 /* Take out every operator with no EMP Code. They can never be marked or paid,
    so they only clutter the supervisors' screens. A list is saved first — this
@@ -1073,11 +1109,12 @@ $('#siteSave').addEventListener('click',()=>{
   const rateIn = trim($('#stRate').value);
   const rate = rateIn==='' ? 0 : +rateIn;
   if(canteen && rateIn!=='' && !(rate>0)) return toast('The canteen rate must be more than 0, or left blank');
-  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.std=std; s.canteen=canteen; s.canteenRate=rate; }
+  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.std=std; s.canteen=canteen; s.canteenRate=rate; applySupPick(s.id); }
   else{
     const id=slug(name);
     if(siteById(id)) return toast('A site with that name already exists');
     CFG.sites.push({id, name, std, canteen, canteenRate:rate, operators:[]});
+    applySupPick(id);
   }
   $('#dlgSite').close(); renderAll();
   toast('Saved — '+name+(std ? ' fixed at '+std+' days' : ' runs the length of each month')+
