@@ -669,7 +669,12 @@ const canteenForNewSite = name => CANTEEN_SET.has(nameKey(name));
    site switched on or off here is never changed back by an import. */
 const OT_SITES = [
   'BALAJI','BALAJI SITARGANJ',
-  'IGL KASHIPUR','IGL (KASHIPUR)','KASHIPUR'
+  'IGL KASHIPUR','IGL (KASHIPUR)','KASHIPUR',
+  // added Sept 2026. KAJARIYA RAJASTHAN only — KAJARIYA AP is a different site
+  // and is deliberately absent; the names are matched whole, so it cannot match.
+  'KAJARIYA RAJASTHAN','KAJARIYA (RAJ)','KAJARIYA RAJ','KAJARIA RAJASTHAN',
+  'CARRIER','CARRIER AIRCON','SUNDER CARRIER AIRCON',
+  'NIHON'
 ];
 const OT_SET = new Set(OT_SITES.map(nameKey));
 const otForNewSite = name => OT_SET.has(nameKey(name));
