@@ -1481,7 +1481,10 @@ function renderLinks(){
   if(!CFG.supervisors.length){ el.innerHTML='<div class="empty"><b>No supervisors yet</b>Add them on tab 2.</div>'; return; }
   ensureTokens();
   const rows = CFG.supervisors.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(s=>
-    '<tr><td><b>'+cesc(s.name)+'</b>'+(s.phone?'<br><span class="muted">'+cesc(s.phone)+'</span>':'')+'</td>'+
+    '<tr><td><b>'+cesc(s.name)+'</b>'+(s.phone?'<br><span class="muted">'+cesc(s.phone)+'</span>':'')+
+      '<br><span class="muted" style="font-size:12px;line-height:1.5">'+
+        (s.siteIds.length ? s.siteIds.map(x=>cesc((siteById(x)||{name:'?'}).name)).join('<br>') : '<i>no sites</i>')+
+      '</span></td>'+
     '<td class="num">'+s.siteIds.length+'</td>'+
     '<td style="font-family:ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all">'+cesc(supLink(s))+'</td>'+
     '<td class="right" style="white-space:nowrap">'+
