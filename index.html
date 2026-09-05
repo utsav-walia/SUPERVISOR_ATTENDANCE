@@ -84,6 +84,10 @@ select:focus,input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(15,
 .nhbar.off{background:#f4f5f7;color:#5c6470}
 .inputs.canteen{grid-template-columns:1fr 1.4fr;margin-top:7px;padding-top:9px;
   border-top:1px dashed var(--line)}
+.inputs.ot{grid-template-columns:1fr;margin-top:7px;padding-top:9px;
+  border-top:1px dashed var(--line)}
+.inp.oth label{color:#1b4b8f}
+.inp.oth input{border-color:#c3d6f2;font-weight:700}
 .inp.meals label{color:#7a5b00} .inp.amt label{color:#7a5b00}
 .inp.meals input{border-color:#e6d5a8} .inp.amt input{border-color:#e6d5a8;font-weight:700}
 .ratenote{margin-top:8px;padding:9px 10px;border-radius:9px;background:#fff6e5;
@@ -541,7 +545,8 @@ const HEAD = [
   ['father',  ['FATHERNAME','FATHERSNAME','FATHER','SONOF','FNAME']],
   ['name',    ['NAME','EMPLOYEENAME','OPERATORNAME','WORKERNAME']],
   ['wd',      ['WD','WORKINGDAYS','WORKDAYS','WORKINGDAY','DUTY','DUTYDAYS','PRESENT','PRESENTDAYS']],
-  ['ot',      ['OT','OVERTIME','OTHRS','OTHOURS','OTDAYS']],
+  ['oh',      ['OTHOURS','OTHRS','OTHOUR','OVERTIMEHOURS','OTHR']],
+  ['ot',      ['OT','OVERTIME','OTDAYS']],
   ['ab',      ['AB','ABSENT','ABSENTDAYS','ABSENTS','ABSENTDAY']],
   ['account', ['ACCOUNTNUMBER','ACCOUNTNO','ACNO','ACCNO','ACCOUNT','BANKACCOUNT','BANKACNO']],
   ['ifsc',    ['IFSCCODE','IFSC','IFSCODE','BANKIFSC']],
@@ -578,7 +583,7 @@ function prune(k){
   if(e.ab==null) delete e.abM;
   // canteen counts as something worth keeping: a man may have canteen and no
   // attendance yet, and dropping the row here would lose it as he typed it
-  if(e.wd==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
+  if(e.wd==null && e.ab==null && e.cq==null && e.ca==null && e.oh==null) delete DB.entries[k];
 }
 /* What the man is actually credited for: what the supervisor typed, plus the
    national holidays he worked, folded straight into WD. Kept in one place so
@@ -597,6 +602,18 @@ function canteenRate(site){
   return (v>0 && isFinite(v)) ? v : 0;
 }
 const money = n => Math.round((+n||0)*100)/100;
+/* ---- OT hours ----------------------------------------------------------
+   Head office pays overtime by the HOUR on a couple of sites, and there the
+   supervisor types the hours per man. Nothing is worked out from them: the
+   number he types is the number payroll reads, in its own OT HOURS column.
+   It never touches WD or AB — a man's WD is his days, his OT is his hours.
+   The switch is on the site and comes down with it, so a supervisor holding
+   one OT site and three ordinary ones only ever sees the box where it
+   belongs. The sheet gates it again; the phone is only the screen. */
+function otOn(site){
+  const s = typeof site === 'string' ? DB.sites.find(x=>x.id===site) : site;
+  return !!(s && s.ot);
+}
 /* WD is typed to one decimal place — a half day, or 21.6, is real work and
    payroll wants it, not just whole days. Rounding here, once, at every point
    a number enters or leaves the app is what keeps 26 - 25.6 from coming out
@@ -612,7 +629,7 @@ function deriveCanteen(siteId, ym, key){
     else delete e.ca;
   }
   if(e.cq == null && e.ca == null){ delete e.cq; delete e.ca; delete e.caM; }
-  if(e.wd==null && e.ab==null && e.cq==null && e.ca==null) delete DB.entries[k];
+  if(e.wd==null && e.ab==null && e.cq==null && e.ca==null && e.oh==null) delete DB.entries[k];
   save();
   return DB.entries[k] || {};
 }
@@ -782,7 +799,8 @@ function render(){
   const rate = site ? canteenRate(site) : 0;
   $('#barSub').textContent = site
     ? site.name + ' · ' + monthLabel(ym) + ' · ' + stdDays(site, ym) + ' day month' +
-      (site.canteen ? ' · canteen' + (rate ? ' ₹'+rate+' each' : ' (no rate)') : '')
+      (site.canteen ? ' · canteen' + (rate ? ' ₹'+rate+' each' : ' (no rate)') : '') +
+      (site.ot ? ' · OT hours' : '')
     : 'Working Days · Overtime · Absent';
 
   if(!site){
@@ -816,7 +834,7 @@ function render(){
         : '';
 
   const hols = holidaysIn(ym);
-  let filled=0, tWd=0, tAb=0, tNh=0, tQty=0, tAmt=0, html='', shown=0, blocked=0, payable=0;
+  let filled=0, tWd=0, tAb=0, tNh=0, tQty=0, tAmt=0, tOh=0, html='', shown=0, blocked=0, payable=0;
   for(const op of site.operators){
     const fault = faultOf(op);
     if(fault) blocked++; else payable++;
@@ -824,7 +842,7 @@ function render(){
     const has = e.wd!=null || e.ab!=null;
     if(has && !fault) filled++;
     if(!fault){ tWd += totalWd(e); tAb += (+e.ab||0); tNh += (+e.nh||0);
-                tQty += (+e.cq||0); tAmt += (+e.ca||0); }
+                tQty += (+e.cq||0); tAmt += (+e.ca||0); tOh += (+e.oh||0); }
     if(q && !(norm(op.code).includes(q) || norm(op.name).includes(q) ||
               norm(op.father).includes(q) || norm(op.account).includes(q))) continue;
     shown++;
@@ -841,10 +859,11 @@ function render(){
       '<div class="meta">'+(meta||'—')+'</div>'+
       (fault ? '<div class="fault">'+xmlEsc(fault)+'</div>'
              : '<div class="inputs">'+ fld(e, std) +'</div>' +
+               (site.ot ? '<div class="inputs ot">'+ ofld(e) +'</div>' : '') +
                (site.canteen ? '<div class="inputs canteen">'+ cfld(e, rate) +'</div>' : '') +
                nhBar(e, hols))+'</div>';
   }
-  tWd = qty(tWd); tAb = qty(tAb);   // clears the float dust left by summing decimals
+  tWd = qty(tWd); tAb = qty(tAb); tOh = qty(tOh);   // clears the float dust left by summing decimals
   $('#chips').innerHTML =
     '<span class="chip">Operators <b>'+payable+'</b></span>'+
     (blocked?'<span class="chip r">Blocked <b>'+blocked+'</b></span>':'')+
@@ -854,6 +873,7 @@ function render(){
     '<span class="chip'+(std!==30?' b':'')+'">Standard month <b>'+std+'</b></span>'+
     (hols.length ? '<span class="chip b" title="'+xmlEsc(holidayLabel(ym))+'">'+
         xmlEsc(holidayLabel(ym))+' <b>+'+tNh+' WD</b></span>' : '')+
+    (site.ot ? '<span class="chip b">Total OT hours <b>'+tOh+'</b></span>' : '')+
     (site.canteen ? '<span class="chip g">Total meals <b>'+tQty+'</b></span>'+
         '<span class="chip b">Total ₹ <b>'+money(tAmt)+'</b></span>'+
         (rate ? '<span class="chip">Rate <b>₹'+rate+'</b></span>'
@@ -866,6 +886,15 @@ function render(){
   list.innerHTML = rateNote + (html || '<div class="empty"><b>'+(site.operators.length?'No matches':'No operators on this site')+'</b>'+
     (site.operators.length?'Try a different search.':'Import your Excel file or add an operator from the menu.')+'</div>');
 }
+/* The OT row, shown under WD/AB only on a site head office pays hourly
+   overtime on. Hours, not days: nothing here is derived, capped or folded
+   into WD — what he types is what payroll gets. */
+function ofld(e){
+  return '<div class="inp oth"><label>OT HOURS</label>'+
+    '<input type="number" inputmode="decimal" min="0" max="999" step="0.5" data-f="oh" '+
+      'placeholder="–" value="'+(e.oh==null?'':e.oh)+'"></div>';
+}
+
 /* The canteen row, shown under WD/AB on a site that runs one. Meals is what
    he counted; the amount follows the site rate unless he types over it. */
 function cfld(e, rate){
@@ -908,6 +937,25 @@ $('#selMonth').addEventListener('change', e=>{ DB.ui.month=e.target.value||curMo
 $('#q').addEventListener('input', render);
 
 $('#list').addEventListener('input', e=>{
+  // OT hours. Nothing is derived from them, so this is the whole of it: hold
+  // the number, mark the card, queue it. WD and AB are untouched.
+  const oinp = e.target.closest('input[data-f="oh"]');
+  if(oinp){
+    const card = e.target.closest('.card'), key = card.dataset.key;
+    const site = curSite().id, ym = curMonth();
+    let v = oinp.value.trim();
+    if(v!==''){
+      const n = Math.max(0, qty(+v||0));
+      if(String(n)!==v && isFinite(+v)) oinp.value = n;
+      v = n;
+    }
+    setEntry(site, ym, key, 'oh', v===''?'':v);
+    const ent = getEntry(site, ym, key);
+    card.classList.toggle('done', ent.wd!=null || ent.oh!=null);
+    updateChips();
+    queue(site, key, ym);
+    return;
+  }
   const cinp = e.target.closest('input[data-f="cq"], input[data-f="ca"]');
   if(cinp){
     const field = cinp.dataset.f;
@@ -986,12 +1034,12 @@ $('#list').addEventListener('click', e=>{
 });
 function updateChips(){
   const site=curSite(), ym=curMonth(); if(!site) return;
-  let filled=0,tWd=0,tAb=0,tNh=0,tQty=0,tAmt=0;
+  let filled=0,tWd=0,tAb=0,tNh=0,tQty=0,tAmt=0,tOh=0;
   for(const op of site.operators){ const e=getEntry(site.id,ym,opKey(op));
     if(e.wd!=null||e.ab!=null) filled++;
     tWd+=totalWd(e); tAb+=(+e.ab||0); tNh+=(+e.nh||0);
-    tQty+=(+e.cq||0); tAmt+=(+e.ca||0); }
-  tWd = qty(tWd); tAb = qty(tAb);   // clears the float dust left by summing decimals
+    tQty+=(+e.cq||0); tAmt+=(+e.ca||0); tOh+=(+e.oh||0); }
+  tWd = qty(tWd); tAb = qty(tAb); tOh = qty(tOh);   // clears the float dust left by summing decimals
   // matched on their own text rather than by position: the canteen and holiday
   // chips only exist on some sites, so an index would land on the wrong one
   for(const el of $('#chips').children){
@@ -999,6 +1047,7 @@ function updateChips(){
     if(/^Filled/.test(t))           el.innerHTML='Filled <b>'+filled+'/'+site.operators.length+'</b>';
     else if(/^Total WD/.test(t))    el.innerHTML='Total WD <b>'+tWd+'</b>';
     else if(/^Total AB/.test(t))    el.innerHTML='Total AB <b>'+tAb+'</b>';
+    else if(/^Total OT hours/.test(t)) el.innerHTML='Total OT hours <b>'+tOh+'</b>';
     else if(/^Total meals/.test(t)) el.innerHTML='Total meals <b>'+tQty+'</b>';
     else if(/^Total ₹/.test(t))     el.innerHTML='Total ₹ <b>'+money(tAmt)+'</b>';
   }
@@ -1250,6 +1299,7 @@ $('#setupRun').addEventListener('click', async ()=>{
       return { id:s.id, name:cleanSiteName(s.name),
                std: (std>0 && std<=31) ? std : 0,      // 0 = follow the calendar month
                canteen: !!s.canteen, canteenRate: +s.canteenRate>0 ? +s.canteenRate : 0,
+               ot: !!s.ot,
                operators:ops };
     });
     added = sites.reduce((a,s)=>a+s.operators.length,0);
@@ -1345,6 +1395,7 @@ async function cloudBootstrap(silent){
       // happened to load in, and February would still show 31.
       std: (+s.stdFixed>0 && +s.stdFixed<=31) ? +s.stdFixed : 0,
       canteen: !!s.canteen, canteenRate: +s.canteenRate>0 ? +s.canteenRate : 0,
+      ot: !!s.ot,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // drop anything for sites he no longer holds
     for(const k of Object.keys(DB.entries)) if(!keep.has(k.split('|')[0])) delete DB.entries[k];
@@ -1360,6 +1411,7 @@ async function cloudBootstrap(silent){
       // the sheet remembers a man turned off for the holiday; without this the
       // rule would hand it straight back to him on every reload
       if(HOLIDAYS_ON && val.wd != null && val.nh === 0) DB.entries[k].nhOff = 1;
+      if(val.oh != null) DB.entries[k].oh = val.oh;
       if(val.cq != null) DB.entries[k].cq = val.cq;
       if(val.ca != null) DB.entries[k].ca = val.ca;
       if(val.caM) DB.entries[k].caM = 1;
@@ -1434,6 +1486,7 @@ async function flush(force){
         // without it the server would apply the default rule and give it straight back
         return { site, key, wd: e.wd==null ? null : e.wd,
                  nh: e.nh==null ? 0 : e.nh,
+                 oh: e.oh==null ? null : e.oh,
                  cq: e.cq==null ? null : e.cq, ca: e.ca==null ? null : e.ca,
                  caM: e.caM ? 1 : 0 };
       });
@@ -1546,6 +1599,10 @@ $('#impRun').addEventListener('click', async ()=>{
             else if(ot!=null) wd = std + ot;
           }
           if(wd!=null){ setEntry(site.id, ym, key, 'wd', wd); derive(site.id, ym, key); nEnt++; }
+          // OT hours come back exactly as they went out, and only on a site that
+          // runs them — a column in the file cannot switch overtime on anywhere
+          const oh = num('oh');
+          if(oh!=null && otOn(site)) setEntry(site.id, ym, key, 'oh', oh);
         }
       }
       // coded men first, in code order; the ones head office sent with no code go last
@@ -1562,8 +1619,10 @@ $('#impRun').addEventListener('click', async ()=>{
 });
 
 /* -------------------------------------------------------------- export */
-// CANTEEN sits between WD and AB — the order payroll reads them in
-const COLS = ['CODE NO.','NAME','FATHER NAME','WD','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
+// OT HOURS follows WD — the attendance figures together — and CANTEEN sits
+// between them and AB, the order payroll reads them in. OT HOURS is blank on
+// a site that does not run hourly overtime, exactly as CANTEEN is.
+const COLS = ['CODE NO.','NAME','FATHER NAME','WD','OT HOURS','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
 function openExport(){
   const site=curSite(), ym=curMonth();
   if(!site) return toast('Nothing to export yet');
@@ -1582,7 +1641,7 @@ function canShareFiles(){
 function buildBook(){
   const ym = curMonth(), all = $('#expAll').checked, onlyFilled = $('#expOnlyFilled').checked;
   const sites = all ? DB.sites : [curSite()];
-  const widths = [11,26,26,7,10,7,22,15];
+  const widths = [11,26,26,7,10,10,7,22,15];
   const seen = {};
   DB.sites.forEach(s => s.operators.forEach(o => {
     if(o.code) seen[o.code] = (seen[o.code]||0) + 1; }));
@@ -1591,14 +1650,15 @@ function buildBook(){
     for(const op of site.operators){
       if(!op.code || seen[op.code] > 1) continue;   // no code, or a shared one: not payable
       const e = getEntry(site.id, ym, opKey(op));
-      const has = e.wd!=null || e.ab!=null || e.cq!=null || e.ca!=null;
+      const has = e.wd!=null || e.ab!=null || e.cq!=null || e.ca!=null || e.oh!=null;
       if(onlyFilled && !has) continue;
       // The holiday credit is folded straight into WD — the split is kept in
       // the sheet's nh column for audit. CANTEEN is the deduction, blank on a
       // site without one.
       const wd = (e.wd!=null || (HOLIDAYS_ON && e.nh!=null)) ? totalWd(e) : null;
       rows.push([ {v:op.code}, op.name||'', op.father||'',
-                  wd, e.ca!=null?+e.ca:null,
+                  wd, (site.ot && e.oh!=null) ? +e.oh : null,
+                  e.ca!=null?+e.ca:null,
                   e.ab!=null?+e.ab:null,
                   {v:op.account||''}, {v:op.ifsc||''} ]);
     }

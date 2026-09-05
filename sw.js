@@ -3,14 +3,14 @@
  * Rules it must never break:
  *   1. Never respond with undefined — that renders a blank page.
  *   2. Never touch anything that isn't ours (Google Sheets calls go straight out).
- *   3. Never cache admin.html — the console is a desk tool and must always be fresh.
+ *   3. Never cache admin.html or monitor.html — head-office pages must always be fresh.
  *   4. A failure anywhere falls through to the network, never to a blank screen.
  *   5. Cache under the address WITHOUT its query string. Supervisors always
  *      arrive at ./?s=TOKEN; if the refreshed copy is filed under the token while
  *      lookups keep matching the plain ./ entry, the phone serves the install-time
  *      app for ever and no fix ever reaches it. This bit is load-bearing.
  */
-const CACHE = 'attendance-crm-v18';  // v18: v17 sw.js went live ahead of index.html, so phones cached the old build under v17 — re-bumped to carry the Sept batch (OT retired, holidays off, roster edits)
+const CACHE = 'attendance-crm-v19';  // v19: OT HOURS box on the sites that pay overtime by the hour (BALAJI, IGL KASHIPUR) and the ninth export column that carries it
 const ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png'
@@ -56,8 +56,9 @@ self.addEventListener('fetch', e => {
 
   // anything not on our own site — Apps Script, Google, CDNs — is none of our business
   if (url.origin !== self.location.origin) return;
-  // the head-office console must never be served from cache
+  // the head-office console and the monitor must never be served from cache
   if (url.pathname.indexOf('admin.html') > -1) return;
+  if (url.pathname.indexOf('monitor.html') > -1) return;
 
   const key = keyFor(req);
 

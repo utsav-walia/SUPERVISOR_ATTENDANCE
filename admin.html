@@ -348,6 +348,11 @@ dialog .foot{padding:12px 20px 18px;display:flex;gap:9px;justify-content:flex-en
       sites are. AB is worked out against this; WD itself is not capped at it. Changing it re-works AB for the
       attendance already recorded for this site the next time you upload.</p>
     <div class="f"><label style="display:flex;gap:8px;align-items:center">
+      <input type="checkbox" id="stOt" style="width:auto"> Overtime is paid by the hour on this site</label></div>
+    <p class="muted" style="font-size:12.5px;margin:0">The supervisor gets an <b>OT HOURS</b> box under WD for every
+      man on this site and types the hours he worked over. Nothing is worked out from them — the number he types is
+      the number payroll reads, in its own <b>OT HOURS</b> column, next to WD. WD and AB are not affected.</p>
+    <div class="f"><label style="display:flex;gap:8px;align-items:center">
       <input type="checkbox" id="stCanteen" style="width:auto"> This site runs a canteen</label></div>
     <div class="f"><label>Canteen rate — ₹ per meal</label>
       <input type="number" id="stRate" min="0" step="0.5" style="width:130px"></div>
@@ -509,7 +514,8 @@ const HEAD=[
   ['father',['FATHERNAME','FATHERSNAME','FATHER','SONOF','FNAME']],
   ['name',['NAME','EMPLOYEENAME','OPERATORNAME','WORKERNAME']],
   ['wd',['WD','WORKINGDAYS','WORKDAYS','WORKINGDAY','DUTY','DUTYDAYS','PRESENT','PRESENTDAYS']],
-  ['ot',['OT','OVERTIME','OTHRS','OTHOURS','OTDAYS']],
+  ['oh',['OTHOURS','OTHRS','OTHOUR','OVERTIMEHOURS','OTHR']],
+  ['ot',['OT','OVERTIME','OTDAYS']],
   ['ab',['AB','ABSENT','ABSENTDAYS','ABSENTS','ABSENTDAY']],
   ['account',['ACCOUNTNUMBER','ACCOUNTNO','ACNO','ACCNO','ACCOUNT','BANKACCOUNT','BANKACNO']],
   ['ifsc',['IFSCCODE','IFSC','IFSCODE','BANKIFSC']],
@@ -653,6 +659,20 @@ function siteStd(s, ym){ return sitePin(s) || daysInMonth(ym || new Date().toISO
 
 const CANTEEN_SET = new Set(CANTEEN_SITES.map(nameKey));
 const canteenForNewSite = name => CANTEEN_SET.has(nameKey(name));
+
+/* ------------------------------------------------------------- OT hours
+   The sites where head office pays overtime by the HOUR. The supervisor gets
+   an OT HOURS box per man there, and the number he types reaches payroll in
+   its own column — nothing is worked out from it, and it never touches WD.
+   This is not the retired OT *days*; that is gone for good.
+   Like the canteen list it only stamps a site the FIRST time it is seen, so a
+   site switched on or off here is never changed back by an import. */
+const OT_SITES = [
+  'BALAJI','BALAJI SITARGANJ',
+  'IGL KASHIPUR','IGL (KASHIPUR)','KASHIPUR'
+];
+const OT_SET = new Set(OT_SITES.map(nameKey));
+const otForNewSite = name => OT_SET.has(nameKey(name));
 const siteRate = s => { const v = s ? +s.canteenRate : 0; return (v>0&&isFinite(v)) ? v : 0; };
 
 /* ------------------------------------------------------------- config */
@@ -669,7 +689,8 @@ function fingerprint(){
   return JSON.stringify({
     std: CFG.std,
     h: CFG.holidays || {},
-    s: CFG.sites.map(s=>s.id+':'+s.name+':'+sitePin(s)+':'+(s.canteen?'C':'-')+siteRate(s)+':'+s.operators.map(o=>
+    s: CFG.sites.map(s=>s.id+':'+s.name+':'+sitePin(s)+':'+(s.canteen?'C':'-')+siteRate(s)+
+         ':'+(s.ot?'H':'-')+':'+s.operators.map(o=>
          o.code+'|'+o.name+'|'+o.father+'|'+o.account+'|'+o.ifsc).join(',')),
     p: CFG.supervisors.map(x=>x.token+':'+x.name+':'+(x.siteIds||[]).join('+'))
   });
@@ -684,6 +705,7 @@ function backfillStd(){
   CFG.sites.forEach(s=>{
     if(s.std === undefined || s.std === null || s.std === ''){ s.std = stdForNewSite(s.name); n++; }
     if(s.canteen === undefined){ s.canteen = canteenForNewSite(s.name); n++; }
+    if(s.ot === undefined){ s.ot = otForNewSite(s.name); n++; }
   });
   // An earlier version pinned every ordinary site at 30 — that was the old fixed
   // default. Those are released to follow the calendar, once. A site pinned to
@@ -740,6 +762,7 @@ function renderSites(){
       '<td class="num">'+(pin?'<b>'+pin+'</b>':'<span class="muted">calendar</span>')+'</td>'+
       '<td class="num">'+(!s.canteen ? '<span class="muted">—</span>'
         : (rate ? '<b>₹'+rate+'</b>' : '<span class="tag none">no rate</span>'))+'</td>'+
+      '<td class="num">'+(s.ot ? '<b>hours</b>' : '<span class="muted">—</span>')+'</td>'+
       '<td>'+(sup.length?sup.map(x=>'<span class="tag">'+esc(x.name)+'</span>').join('')
                        :'<span class="tag none">unassigned</span>')+'</td>'+
       '<td class="right"><button class="btn sm" data-site="'+s.id+'">Edit</button></td></tr>';
@@ -747,7 +770,8 @@ function renderSites(){
   const n26 = CFG.sites.filter(s=>sitePin(s)).length;
   const noRate = CFG.sites.filter(s=>s.canteen && !siteRate(s));
   el.innerHTML='<table><thead><tr><th>Site</th><th class="right">Operators</th>'+
-    '<th class="right">Month</th><th class="right">Canteen</th><th>Supervisor</th><th></th>'+
+    '<th class="right">Month</th><th class="right">Canteen</th><th class="right">OT</th>'+
+    '<th>Supervisor</th><th></th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table>'+
     '<p class="hint" style="padding:10px 14px 0;margin:0"><b>calendar</b> means the site runs the real '+
       'length of each month — 28 in February, 31 in August — and that is the standard AB is worked out against. '+
@@ -969,11 +993,13 @@ $('#masterRun').addEventListener('click', async ()=>{
       // A new site gets its month length from the duty list; an existing one keeps
       // whatever it already has, so an import never undoes a decision made here.
       if(!site){ site={id, name:clean, std:stdForNewSite(clean),
-                       canteen:canteenForNewSite(clean), canteenRate:0, operators:[]};
+                       canteen:canteenForNewSite(clean), canteenRate:0,
+                       ot:otForNewSite(clean), operators:[]};
                  CFG.sites.push(site); nSites++; newSiteNames.push(clean); }
       else { site.name = clean;
              if(!(+site.std>0)) site.std = stdForNewSite(clean);
-             if(site.canteen === undefined) site.canteen = canteenForNewSite(clean); }
+             if(site.canteen === undefined) site.canteen = canteenForNewSite(clean);
+             if(site.ot === undefined) site.ot = otForNewSite(clean); }
       if(replace){
         // the file is the truth for this site: anyone not in it has left
         const keep=new Set(recs.map(r=>r.code));
@@ -1035,6 +1061,7 @@ function openSite(id){
   $('#stName').value = s?s.name:'';
   $('#stStd').value = s ? (sitePin(s) || '') : '';
   $('#stCanteen').checked = s ? !!s.canteen : false;
+  $('#stOt').checked = s ? !!s.ot : false;
   $('#stRate').value = s && siteRate(s) ? siteRate(s) : '';
   $('#siteDel').style.display = s?'':'none';
   pickSups = new Set(s ? supsOfSite(s.id).map(x=>x.id) : []);
@@ -1106,19 +1133,21 @@ $('#siteSave').addEventListener('click',()=>{
   const std = stdRaw==='' ? 0 : Math.round(+stdRaw||0);
   if(stdRaw!=='' && !(std>0&&std<=31)) return toast('Standard days must be 1 to 31, or blank for the length of the month');
   const canteen = $('#stCanteen').checked;
+  const otOn = $('#stOt').checked;
   const rateIn = trim($('#stRate').value);
   const rate = rateIn==='' ? 0 : +rateIn;
   if(canteen && rateIn!=='' && !(rate>0)) return toast('The canteen rate must be more than 0, or left blank');
-  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.std=std; s.canteen=canteen; s.canteenRate=rate; applySupPick(s.id); }
+  if(editSiteId){ const s=siteById(editSiteId); s.name=name; s.std=std; s.canteen=canteen; s.canteenRate=rate; s.ot=otOn; applySupPick(s.id); }
   else{
     const id=slug(name);
     if(siteById(id)) return toast('A site with that name already exists');
-    CFG.sites.push({id, name, std, canteen, canteenRate:rate, operators:[]});
+    CFG.sites.push({id, name, std, canteen, canteenRate:rate, ot:otOn, operators:[]});
     applySupPick(id);
   }
   $('#dlgSite').close(); renderAll();
   toast('Saved — '+name+(std ? ' fixed at '+std+' days' : ' runs the length of each month')+
         (canteen ? (rate ? ' · canteen ₹'+rate+' a meal' : ' · canteen, no rate set yet') : '')+
+        (otOn ? ' · OT paid by the hour' : '')+
         (isPushed()?'':'. Press ⇧ Upload on the Cloud tab to send it.'), 5600);
 });
 $('#siteDel').addEventListener('click',()=>{
@@ -1193,7 +1222,8 @@ function setupFor(sup){
     supervisor:{ id:sup.id, name:sup.name, state:sup.state||'', phone:sup.phone||'' },
     sites: sup.siteIds.map(i=>siteById(i)).filter(Boolean)
       .map(s=>({ id:s.id, name:s.name, state:s.state||'', std:sitePin(s),
-                 canteen:!!s.canteen, canteenRate:siteRate(s), operators:s.operators }))
+                 canteen:!!s.canteen, canteenRate:siteRate(s), ot:!!s.ot,
+                 operators:s.operators }))
   };
 }
 const setupName = sup => 'SETUP_'+sup.name.toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'')+'.json';
@@ -1291,8 +1321,15 @@ $('#dlEach').addEventListener('click',async ()=>{
 });
 
 /* ------------------------------------------------------- 4. merging */
-// CANTEEN sits between WD and AB, the same order as the supervisor's export
-const COLS=['CODE NO.','NAME','FATHER NAME','WD','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
+// OT HOURS follows WD and CANTEEN sits between it and AB — the order payroll
+// reads them in, and the same order the supervisor's export uses.
+const COLS=['CODE NO.','NAME','FATHER NAME','WD','OT HOURS','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
+/* What the MERGE writes. It has never carried the canteen money — it reads the
+   supervisors' returned workbooks and keeps the attendance figures — and it was
+   printing seven values under the eight-column header above, which put AB under
+   CANTEEN and every bank column one to the left of its name. Its own list, in
+   step with what it actually pushes, is what fixes that. */
+const MERGE_COLS=['CODE NO.','NAME','FATHER NAME','WD','OT HOURS','AB','ACCOUNT NUMBER','IFSC CODE'];
 let mergedBook=null, mergedName='MASTER.xlsx';
 $('#mergeRun').addEventListener('click', async ()=>{
   const files=[...$('#mergeFiles').files];
@@ -1321,7 +1358,7 @@ $('#mergeRun').addEventListener('click', async ()=>{
         const rowKey = code || '~'+norm(nm0);
         const num=k=>{const v=g(k); if(v===''||v===null) return null; const n=qty(Math.abs(+v)); return isFinite(n)?n:null;};
         const row={ code, name:trim(g('name')), father:trim(g('father')),
-                    wd:num('wd'), ab:num('ab'),
+                    wd:num('wd'), oh:num('oh'), ab:num('ab'),
                     account:trim(g('account')), ifsc:trim(g('ifsc')).toUpperCase(), src:f.name };
         const prev=bucket.rows.get(rowKey);
         if(prev && prev.src!==f.name && (prev.wd??null)!==(row.wd??null))
@@ -1341,15 +1378,15 @@ $('#mergeRun').addEventListener('click', async ()=>{
     const ka=siteById(a)?0:1, kb=siteById(b)?0:1;
     return ka-kb || bySite.get(a).name.localeCompare(bySite.get(b).name);
   });
-  const widths=[11,26,26,7,7,22,15];
+  const widths=[11,26,26,7,10,7,22,15];
   const sheets=order.map(k=>{
     const b=bySite.get(k), known=siteById(k);
     // keep head office's operator order where we have it, then anyone extra
     const seq = known ? known.operators.map(opKey).filter(c=>b.rows.has(c)) : [];
     for(const c of b.rows.keys()) if(!seq.includes(c)) seq.push(c);
-    const rows=[COLS.slice()];
+    const rows=[MERGE_COLS.slice()];
     for(const c of seq){ const r=b.rows.get(c);
-      rows.push([{v:r.code}, r.name, r.father, r.wd, r.ab, {v:r.account}, {v:r.ifsc}]); }
+      rows.push([{v:r.code}, r.name, r.father, r.wd, r.oh, r.ab, {v:r.account}, {v:r.ifsc}]); }
     return { name:b.name, rows, widths };
   });
 
@@ -1452,7 +1489,7 @@ $('#apiPush').addEventListener('click', async ()=>{
     const d = await apiCall({ action:'adminPush', k:CFG.key, std:CFG.std||0,
       holidays: CFG.holidays || {},
       sites: CFG.sites.map(s=>({ id:s.id, name:s.name, std:sitePin(s),
-        canteen: !!s.canteen, canteenRate: siteRate(s),
+        canteen: !!s.canteen, canteenRate: siteRate(s), ot: !!s.ot,
         operators: s.operators.map(o=>({ key:opKey(o), code:o.code||'', name:o.name||'',
           father:o.father||'', account:o.account||'', ifsc:o.ifsc||'' })) })),
       supervisors: CFG.supervisors.map(s=>({ token:s.token, name:s.name,
@@ -1659,6 +1696,7 @@ async function pullFromSheet({ ask = true, quiet = false } = {}){
       std: (+s.std>0 && +s.std<=31) ? +s.std : stdForNewSite(s.name),
       canteen: s.canteen === undefined ? canteenForNewSite(s.name) : !!s.canteen,
       canteenRate: +s.canteenRate>0 ? +s.canteenRate : 0,
+      ot: s.ot === undefined ? otForNewSite(s.name) : !!s.ot,
       operators:(s.operators||[]).map(o=>Object.assign({}, o, {key:o.key||o.code})) }));
     // supervisors come back keyed by token; give each one a local id again
     CFG.supervisors = (d.supervisors||[]).map(s=>({
@@ -1712,14 +1750,15 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
     const MONTHS=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
                   'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
     const label = MONTHS[+month.slice(5,7)-1]+'_'+month.slice(0,4);
-    const widths=[11,26,26,7,10,7,22,15];
-    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD','TOTAL CANTEEN','TOTAL AB','STATUS']];
+    const widths=[11,26,26,7,10,10,7,22,15];
+    const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD',
+                               'TOTAL OT HOURS','TOTAL CANTEEN','TOTAL AB','STATUS']];
     let grandFilled=0, grandOps=0;
 
     CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(site=>{
       const have = got.get(site.id) || new Map();
       const rows=[COLS.slice()];
-      let filled=0, tWd=0, tAb=0, tCa=0;
+      let filled=0, tWd=0, tAb=0, tCa=0, tOh=0;
       site.operators.forEach(op=>{
         const r = have.get(String(opKey(op)));
         // The holiday credit is folded straight into WD, exactly as the phone
@@ -1727,18 +1766,20 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const wd = r && (r.wd!=null || (HOLIDAYS_ON && r.nh!=null)) ? qty((+r.wd||0)+(HOLIDAYS_ON?(+r.nh||0):0)) : null;
         const ab = r && r.ab!=null ? r.ab : null;
         const ca = r && r.ca!=null ? r.ca : null;
-        if(wd!=null || ca!=null) filled++;
-        tWd+=wd||0; tAb+=ab||0; tCa+=ca||0;
-        rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, ca, ab,
+        const oh = r && r.oh!=null ? r.oh : null;
+        if(wd!=null || ca!=null || oh!=null) filled++;
+        tWd+=wd||0; tAb+=ab||0; tCa+=ca||0; tOh+=oh||0;
+        rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, oh, ca, ab,
                    {v:op.account||''}, {v:op.ifsc||''}]);
       });
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
       have.forEach((r,k)=>{ if(known.has(k)) return;
         const wd = (r.wd!=null || (HOLIDAYS_ON && r.nh!=null)) ? qty((+r.wd||0)+(HOLIDAYS_ON?(+r.nh||0):0)) : null;
-        if(wd!=null || r.ca!=null) filled++;
-        tWd+=wd||0; tAb+=r.ab||0; tCa+=r.ca||0;
+        if(wd!=null || r.ca!=null || r.oh!=null) filled++;
+        tWd+=wd||0; tAb+=r.ab||0; tCa+=r.ca||0; tOh+=(+r.oh||0);
         rows.push([{v:r.code||''}, r.name||'', r.father||'', wd,
+                   r.oh==null?null:r.oh,
                    r.ca==null?null:r.ca, r.ab,
                    {v:r.account||''}, {v:r.ifsc||''}]); });
 
@@ -1747,20 +1788,21 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
       sheets.push({name:site.name, rows, widths});
       summary.push([site.name, supsOfSite(site.id).map(x=>x.name).join(', ')||'—',
                     total, filled, total-filled, qty(tWd),
+                    site.ot ? qty(tOh) : null,
                     site.canteen ? Math.round(tCa*100)/100 : null, qty(tAb),
                     filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE')]);
     });
 
     summary.push([]);
-    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','']);
-    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,14,10,13]});
+    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','','']);
+    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,15,14,10,13]});
 
     download('ATTENDANCE_'+label+'.xlsx', buildXlsx(sheets),
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
-    // status is column 8 now that TOTAL OT has been retired
-    const notStarted = summary.slice(1,-2).filter(r=>r[8]==='NOT STARTED');
-    const part       = summary.slice(1,-2).filter(r=>r[8]==='PART DONE');
+    // status is column 9 now that TOTAL OT HOURS sits beside TOTAL WD
+    const notStarted = summary.slice(1,-2).filter(r=>r[9]==='NOT STARTED');
+    const part       = summary.slice(1,-2).filter(r=>r[9]==='PART DONE');
     const out=['<span class="ok">✓ '+cesc(label.replace('_',' '))+' downloaded</span>','',
       '   sites        '+CFG.sites.length,
       '   operators    '+grandOps,
