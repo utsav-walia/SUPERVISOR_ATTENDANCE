@@ -806,6 +806,18 @@ function renderSites(){
   fsel.innerHTML = DB.sites.map(s=>'<option value="'+s.id+'">'+xmlEsc(s.name)+'</option>').join('');
   if(DB.ui.site){ sel.value=DB.ui.site; fsel.value=DB.ui.site; }
 }
+/* A background pull redraws the whole list. Doing that while he is typing in a
+   box throws the box away mid-number and the rest of his keystrokes go nowhere.
+   So if he is in a box, wait until he leaves the list, then draw. */
+let renderHeld = false;
+function typingInList(){
+  const a = document.activeElement;
+  return !!(a && a.tagName==='INPUT' && a.closest && a.closest('#list'));
+}
+function renderWhenFree(){
+  if(typingInList()){ renderHeld = true; renderSites(); return; }
+  renderHeld = false; render();
+}
 function render(){
   renderSites();
   $('#selMonth').value = curMonth();
@@ -1042,6 +1054,10 @@ $('#list').addEventListener('input', e=>{
   else if(want) card.insertAdjacentHTML('beforeend', want);
   updateChips();
   queue(site, code, ym);
+});
+$('#list').addEventListener('focusout', ()=>{
+  // focus moves box to box inside the list; only draw once he has really left it
+  setTimeout(()=>{ if(renderHeld && !typingInList()){ renderHeld = false; render(); } }, 0);
 });
 $('#list').addEventListener('click', e=>{
   const nh = e.target.closest('[data-nh]');
@@ -1445,7 +1461,7 @@ async function cloudBootstrap(silent){
     }
     if(!keep.has(DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
     lastPull = Date.now();          // a manual reload resets the throttle too
-    save(); render();
+    save(); renderWhenFree();
     if(pendingCount()) flush(); else setSync('ok','Saved');
     if(!silent) toast('Loaded '+DB.sites.length+' site(s) for '+((d.supervisor&&d.supervisor.name)||'you'));
   }catch(err){
@@ -1477,7 +1493,17 @@ function queue(site, key, ym){
   save(); setSync('busy','Saving…');
   clearTimeout(flushT); flushT = setTimeout(flush, 900);
 }
-let flushing=false;
+let flushing=false, flushAgain=false;
+/* The row exactly as it goes up. Kept apart so flush can tell afterwards
+   whether the man's entry changed while the save was in the air. */
+function rowFor(ym, site, key){
+  const e = getEntry(site, ym, key);
+  return { site, key, wd: e.wd==null ? null : e.wd,
+           nh: e.nh==null ? 0 : e.nh,
+           oh: e.oh==null ? null : e.oh,
+           cq: e.cq==null ? null : e.cq, ca: e.ca==null ? null : e.ca,
+           caM: e.caM ? 1 : 0 };
+}
 /* The server stores only the sites this token holds and names back the ones it
    would not take. Anything refused stays on the phone and is said out loud —
    clearing the queue on a green Saved while the sheet stored nothing is how
@@ -1486,7 +1512,9 @@ let flushing=false;
    Refused sites are remembered so the 30-second timer does not retry a site
    head office has not assigned, for ever. Tapping the sync chip forces one. */
 async function flush(force){
-  if(!cloudOn() || flushing) return;
+  if(!cloudOn()) return;
+  // a save is already in the air: do not drop this one, run again when it lands
+  if(flushing){ flushAgain = true; return; }
   const blocked = new Set(DB.refusedSites||[]);
   const all = Object.keys(DB.pending||{});
   if(!all.length){ setSync('ok','Saved'); return; }
@@ -1504,22 +1532,21 @@ async function flush(force){
     let held = 0;
     for(const ym of Object.keys(byMonth)){
       const mine = byMonth[ym];
-      const rows = mine.map(k=>{
-        const [, site, key] = k.split('|');
-        const e = getEntry(site, ym, key);
-        // nh is sent explicitly so the supervisor's "he was off" decision survives;
-        // without it the server would apply the default rule and give it straight back
-        return { site, key, wd: e.wd==null ? null : e.wd,
-                 nh: e.nh==null ? 0 : e.nh,
-                 oh: e.oh==null ? null : e.oh,
-                 cq: e.cq==null ? null : e.cq, ca: e.ca==null ? null : e.ca,
-                 caM: e.caM ? 1 : 0 };
-      });
+      // nh is sent explicitly so the supervisor's "he was off" decision survives;
+      // without it the server would apply the default rule and give it straight back
+      const rows = mine.map(k=>{ const [, site, key] = k.split('|'); return rowFor(ym, site, key); });
+      const sent = {};
+      mine.forEach((k,i)=>{ sent[k] = JSON.stringify(rows[i]); });
       const d = await apiPost({action:'save', s:DB.token, month:ym, rows});
       if(!d.ok) throw new Error(d.error||'refused');
       (d.refused||[]).forEach(id=>refused.add(id));
       mine.forEach(k=>{
         if(refused.has(k.split('|')[1])){ held++; return; }   // keep it — it was not stored
+        // Apps Script takes seconds. If he kept typing while this was in the air
+        // (25 went up, he finished 2500), the sheet has the OLD number: keep the
+        // mark so the new one follows. Clearing it here is how 2500 became 25.
+        const [, site, key] = k.split('|');
+        if(JSON.stringify(rowFor(ym, site, key)) !== sent[k]){ flushAgain = true; return; }
         delete DB.pending[k];
       });
     }
@@ -1532,6 +1559,8 @@ async function flush(force){
       setSync('bad', held+' refused');
       toast('Head office has not given you '+names.join(', ')+'. '+held+' entr'+(held===1?'y':'ies')+
             ' could NOT be saved — they are still on this phone. Tell head office.', 9000);
+    }else if(flushAgain){
+      setSync('busy','Saving…');
     }else{
       showPending();
     }
@@ -1540,7 +1569,10 @@ async function flush(force){
     setSync('bad', pendingCount()+' not sent');
     retryMs = Math.min(retryMs*2, 60000);
     clearTimeout(flushT); flushT = setTimeout(flush, retryMs);
-  }finally{ flushing = false; }
+  }finally{
+    flushing = false;
+    if(flushAgain){ flushAgain = false; clearTimeout(flushT); flushT = setTimeout(flush, 400); }
+  }
 }
 
 $('#sync').addEventListener('click', ()=>{
