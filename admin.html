@@ -1342,7 +1342,8 @@ $('#dlEach').addEventListener('click',async ()=>{
 /* ------------------------------------------------------- 4. merging */
 // OT HOURS follows WD and CANTEEN sits between it and AB — the order payroll
 // reads them in, and the same order the supervisor's export uses.
-const COLS=['CODE NO.','NAME','FATHER NAME','WD','OT HOURS','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE'];
+// ADVANCE and MISC (Oct 2026) are appended last, so nothing before them moves.
+const COLS=['CODE NO.','NAME','FATHER NAME','WD','OT HOURS','CANTEEN','AB','ACCOUNT NUMBER','IFSC CODE','ADVANCE','MISC'];
 /* What the MERGE writes. It has never carried the canteen money — it reads the
    supervisors' returned workbooks and keeps the attendance figures — and it was
    printing seven values under the eight-column header above, which put AB under
@@ -1482,7 +1483,7 @@ async function apiCall(body){
     headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(body)});
   if(!r.ok) throw new Error('server '+r.status);
   const d = await r.json();
-  if(!d.ok) throw new Error(d.error||'refused');
+  if(!d.ok){ const e=new Error(d.error||'refused'); e.stale=!!d.stale; throw e; }
   return d;
 }
 $('#apiUrl').addEventListener('change', e=>{ CFG.api=trim(e.target.value); saveCfg(); });
@@ -1498,14 +1499,19 @@ $('#apiTest').addEventListener('click', async ()=>{
   }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Could not connect'); }
 });
 
-$('#apiPush').addEventListener('click', async ()=>{
+$('#apiPush').addEventListener('click', ()=>pushToSheet({ force:false }));
+async function pushToSheet({ force = false } = {}){
   CFG.api=trim($('#apiUrl').value); CFG.key=trim($('#apiKey').value); saveCfg();
   if(!CFG.api||!CFG.key) return toast('Enter the Web app URL and admin key first');
   if(!CFG.sites.length) return toast('Load your master file first');
+  if(!CFG.sheetLoaded && !force && !confirm('This screen was never loaded from the sheet in this browser.\n\n'+
+      'Uploading it can put back old EMP Codes and make the attendance supervisors typed look empty.\n\n'+
+      'Press Cancel, then ⇩ Load everything from the sheet first (recommended).\nPress OK only if this screen is definitely the latest list.')) return;
   const made = ensureTokens();
   clog('<span class="dim">Uploading…</span>');
   try{
     const d = await apiCall({ action:'adminPush', k:CFG.key, std:CFG.std||0,
+      baseSig: CFG.sheetSig || '', force: !!force,
       holidays: CFG.holidays || {},
       sites: CFG.sites.map(s=>({ id:s.id, name:s.name, std:sitePin(s),
         canteen: !!s.canteen, canteenRate: siteRate(s), ot: !!s.ot,
@@ -1517,14 +1523,37 @@ $('#apiPush').addEventListener('click', async ()=>{
       '   sites        '+d.sites, '   operators    '+d.operators, '   supervisors  '+d.supervisors];
     if(d.refolded) out.push('', '<span class="ok">'+d.refolded+
       ' attendance row(s) had AB re-worked out for the new month lengths.</span>');
+    if(d.relinked) out.push('', '<span class="ok">'+d.relinked+
+      ' attendance row(s) were carried over to the man’s new EMP Code — nothing was lost.</span>');
+    if(d.codesRestored) out.push('', '<span class="warn">'+d.codesRestored+
+      ' man/men on this list had NO EMP Code; the code his own attendance carries was put back:</span>',
+      ...(d.restored||[]).slice(0,20).map(t=>'   '+cesc(t)));
     if(made) out.push('', '<span class="warn">'+made+' supervisor(s) were given a new link just now — send them out.</span>');
     const noSites = CFG.supervisors.filter(s=>!s.siteIds.length);
     if(noSites.length) out.push('', '<span class="warn">No sites assigned: '+noSites.map(s=>cesc(s.name)).join(', ')+'</span>');
+    CFG.sheetSig = d.sig || ''; CFG.sheetLoaded = true;
     markPushed();                       // the sheet now matches this screen
     clog(out); renderLinks();
     toast('Uploaded — the supervisors’ links now show '+d.sites+' sites and '+d.operators+' operators', 5000);
-  }catch(err){ clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Upload failed: '+err.message, 4500); }
-});
+    // codes were put back on the sheet, so this screen is behind it — catch up
+    if(d.codesRestored){ await pullFromSheet({ ask:false, quiet:true }); clog(out); }
+  }catch(err){
+    if(err.stale){
+      clog('<span class="bad">✗ Not uploaded — the sheet changed since this screen was loaded.</span>\n'+
+           '<span class="dim">A supervisor edited his list from the phone, or another computer uploaded. '+
+           'Uploading this copy would put the old codes back and their attendance would look empty.</span>');
+      if(confirm('NOT uploaded — the sheet has changed since this screen was loaded.\n\n'+
+          'OK = Load the latest list from the sheet now (recommended). Anything on this screen that was not uploaded is lost — redo it, then upload.\n\n'+
+          'Cancel = decide later.')){
+        await pullFromSheet({ ask:false });
+      } else if(confirm('Upload THIS screen anyway and overwrite the changes made on the sheet?\n\nNot recommended.')){
+        await pushToSheet({ force:true });
+      }
+      return;
+    }
+    clog('<span class="bad">✗ '+cesc(err.message)+'</span>'); toast('Upload failed: '+err.message, 4500);
+  }
+}
 $('#unsentGo').addEventListener('click', ()=>{
   $$('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab==='t6'));
   $$('main section').forEach(s=>s.classList.toggle('on', s.id==='t6'));
@@ -1720,6 +1749,9 @@ async function pullFromSheet({ ask = true, quiet = false } = {}){
     // supervisors come back keyed by token; give each one a local id again
     CFG.supervisors = (d.supervisors||[]).map(s=>({
       id:uid(), token:s.token, name:s.name, phone:s.phone||'', siteIds:s.siteIds||[] }));
+    // the fingerprint of the sheet this screen came from — an upload sends it
+    // back, and the sheet refuses one made over changes it has not seen
+    CFG.sheetSig = d.sig || ''; CFG.sheetLoaded = true;
     saveCfg(); markPushed(); renderAll();   // this screen now matches the sheet
     const ops = CFG.sites.reduce((a,s)=>a+s.operators.length,0);
     const out = ['<span class="ok">✓ Loaded from the sheet</span>','',
@@ -1769,15 +1801,17 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
     const MONTHS=['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE','JULY',
                   'AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
     const label = MONTHS[+month.slice(5,7)-1]+'_'+month.slice(0,4);
-    const widths=[11,26,26,7,10,10,7,22,15];
+    const widths=[11,26,26,7,10,10,7,22,15,10,10];
+    // TOTAL ADVANCE / TOTAL MISC go after STATUS so STATUS stays column 9
     const sheets=[], summary=[['SITE','SUPERVISOR','OPERATORS','FILLED','MISSING','TOTAL WD',
-                               'TOTAL OT HOURS','TOTAL CANTEEN','TOTAL AB','STATUS']];
+                               'TOTAL OT HOURS','TOTAL CANTEEN','TOTAL AB','STATUS',
+                               'TOTAL ADVANCE','TOTAL MISC']];
     let grandFilled=0, grandOps=0;
 
     CFG.sites.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(site=>{
       const have = got.get(site.id) || new Map();
       const rows=[COLS.slice()];
-      let filled=0, tWd=0, tAb=0, tCa=0, tOh=0;
+      let filled=0, tWd=0, tAb=0, tCa=0, tOh=0, tAdv=0, tMisc=0;
       site.operators.forEach(op=>{
         const r = have.get(String(opKey(op)));
         // The holiday credit is folded straight into WD, exactly as the phone
@@ -1786,21 +1820,24 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
         const ab = r && r.ab!=null ? r.ab : null;
         const ca = r && r.ca!=null ? r.ca : null;
         const oh = r && r.oh!=null ? r.oh : null;
-        if(wd!=null || ca!=null || oh!=null) filled++;
-        tWd+=wd||0; tAb+=ab||0; tCa+=ca||0; tOh+=oh||0;
+        const adv = r && r.adv!=null ? r.adv : null;
+        const misc = r && r.misc!=null ? r.misc : null;
+        if(wd!=null || ca!=null || oh!=null || adv!=null || misc!=null) filled++;
+        tWd+=wd||0; tAb+=ab||0; tCa+=ca||0; tOh+=oh||0; tAdv+=adv||0; tMisc+=misc||0;
         rows.push([{v:op.code||''}, op.name||'', op.father||'', wd, oh, ca, ab,
-                   {v:op.account||''}, {v:op.ifsc||''}]);
+                   {v:op.account||''}, {v:op.ifsc||''}, adv, misc]);
       });
       // anyone in the sheet this site does not have in the master list
       const known=new Set(site.operators.map(o=>String(opKey(o))));
       have.forEach((r,k)=>{ if(known.has(k)) return;
         const wd = (r.wd!=null || (HOLIDAYS_ON && r.nh!=null)) ? qty((+r.wd||0)+(HOLIDAYS_ON?(+r.nh||0):0)) : null;
-        if(wd!=null || r.ca!=null || r.oh!=null) filled++;
-        tWd+=wd||0; tAb+=r.ab||0; tCa+=r.ca||0; tOh+=(+r.oh||0);
+        if(wd!=null || r.ca!=null || r.oh!=null || r.adv!=null || r.misc!=null) filled++;
+        tWd+=wd||0; tAb+=r.ab||0; tCa+=r.ca||0; tOh+=(+r.oh||0); tAdv+=(+r.adv||0); tMisc+=(+r.misc||0);
         rows.push([{v:r.code||''}, r.name||'', r.father||'', wd,
                    r.oh==null?null:r.oh,
                    r.ca==null?null:r.ca, r.ab,
-                   {v:r.account||''}, {v:r.ifsc||''}]); });
+                   {v:r.account||''}, {v:r.ifsc||''},
+                   r.adv==null?null:r.adv, r.misc==null?null:r.misc]); });
 
       const total=rows.length-1;
       grandFilled+=filled; grandOps+=total;
@@ -1809,12 +1846,13 @@ $('#dlMonthGo').addEventListener('click', async ()=>{
                     total, filled, total-filled, qty(tWd),
                     site.ot ? qty(tOh) : null,
                     site.canteen ? Math.round(tCa*100)/100 : null, qty(tAb),
-                    filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE')]);
+                    filled===0 ? 'NOT STARTED' : (filled<total ? 'PART DONE' : 'DONE'),
+                    Math.round(tAdv*100)/100, Math.round(tMisc*100)/100]);
     });
 
     summary.push([]);
-    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','','']);
-    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,15,14,10,13]});
+    summary.push(['ALL SITES','',grandOps,grandFilled,grandOps-grandFilled,'','','','','','','']);
+    sheets.unshift({name:'SUMMARY', rows:summary, widths:[28,22,11,9,9,10,15,14,10,13,14,12]});
 
     download('ATTENDANCE_'+label+'.xlsx', buildXlsx(sheets),
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
