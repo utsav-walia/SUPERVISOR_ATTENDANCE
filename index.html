@@ -1522,6 +1522,8 @@ async function cloudBootstrap(silent){
 
 /* Queue one operator and push soon. */
 let flushT=null, retryMs=4000;
+// the test suites run on the old 0.9 s so their timings hold; phones always get 3 s
+const FLUSH_MS = (typeof window!=='undefined' && window.__FLUSH_MS) || 3000;
 /* The month is part of the key. It used to be assumed to be whatever month the
    screen was showing when the queue was flushed — so a value typed in one month
    and sent while another was on screen was filed against the wrong month. Now
@@ -1532,7 +1534,12 @@ function queue(site, key, ym){
   DB.pending = DB.pending || {};
   DB.pending[(ym || curMonth())+'|'+site+'|'+key] = 1;
   save(); setSync('busy','Saving…');
-  clearTimeout(flushT); flushT = setTimeout(flush, 900);
+  /* 3 s, not 0.9 s (7 Oct 2026). Every save waits its turn behind every other
+     supervisor's, so a save per number typed meant a queue that never cleared
+     in the first week of the month. Now a burst of typing goes up as one save.
+     Nothing waits on it: the value is already on this phone, and leaving the
+     app sends it straight away (visibilitychange below). */
+  clearTimeout(flushT); flushT = setTimeout(flush, FLUSH_MS);
 }
 let flushing=false, flushAgain=false;
 /* The row exactly as it goes up. Kept apart so flush can tell afterwards
@@ -1646,7 +1653,12 @@ async function refresh(force){
   await cloudBootstrap(true);   // silent: no toast for something he did not ask for
 }
 window.addEventListener('online', ()=>{ refresh(true); });
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refresh(); });
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden) return refresh();
+  // leaving the app (home button, screen off): send what is waiting now,
+  // rather than leave it for the 3-second timer the phone may freeze first
+  if(pendingCount()){ clearTimeout(flushT); flush(); }
+});
 window.addEventListener('pageshow', e=>{ if(e.persisted) refresh(); });   // iOS back-forward cache
 setInterval(()=>{ if(cloudOn() && pendingCount() && navigator.onLine) flush(); }, 30000);
 

@@ -10,7 +10,7 @@
  *      lookups keep matching the plain ./ entry, the phone serves the install-time
  *      app for ever and no fix ever reaches it. This bit is load-bearing.
  */
-const CACHE = 'attendance-crm-v21';  // v21: ADVANCE and MISC boxes on every card, synced to the sheet and exported.
+const CACHE = 'attendance-crm-v22';  // v22: saves batched (3 s after typing, sent at once on leaving the app). v21: ADVANCE and MISC boxes on every card, synced to the sheet and exported.
 // prev v19  // v19 (never released): OT HOURS on the five hourly sites, the ninth export column, and the per-man month exception at SOMANY HR. Phones are still on v17, so this one number carries the whole September batch.
 const ASSETS = [
   './', './index.html', './config.js', './manifest.webmanifest',
