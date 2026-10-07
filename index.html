@@ -1433,18 +1433,43 @@ function showPending(){
   else setSync('ok', 'Saved');
 }
 
+/* No request waits for ever (7 Oct 2026). On a weak signal the phone's fetch
+   could hang with no answer and no error, so the chip said "Loading…" for a
+   minute and more while the sheet itself answers in 2-3 s. Now a request that
+   has no reply in time is given up and said out loud; nothing typed is lost —
+   it is already on the phone and the queue sends it later. */
+// the suites shorten these through window.__WAIT_MS; phones always get 20 s / 35 s
+const GET_WAIT_MS = (typeof window!=='undefined' && window.__WAIT_MS) || 20000,
+      POST_WAIT_MS = (typeof window!=='undefined' && window.__WAIT_MS) || 35000;
+async function fetchWait(url, opts, ms){
+  const ctl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+  const t = ctl ? setTimeout(()=>ctl.abort(), ms) : null;
+  try{
+    const r = await fetch(url, ctl ? Object.assign({}, opts, {signal: ctl.signal}) : opts);
+    if(!r.ok) throw new Error('server '+r.status);
+    return await r.json();
+  }catch(err){
+    if(err && err.name==='AbortError'){
+      const e = new Error('no reply in '+Math.round(ms/1000)+' s — weak signal'); e.timeout = true; throw e;
+    }
+    throw err;
+  }finally{ if(t) clearTimeout(t); }
+}
 async function apiGet(params){
   const q = Object.keys(params).map(k=>k+'='+encodeURIComponent(params[k])).join('&');
-  const r = await fetch(API+'?'+q, {method:'GET', redirect:'follow'});
-  if(!r.ok) throw new Error('server '+r.status);
-  return r.json();
+  // a read is safe to ask twice: one quiet retry before giving up
+  try{ return await fetchWait(API+'?'+q, {method:'GET', redirect:'follow'}, GET_WAIT_MS); }
+  catch(err){
+    if(!err.timeout && !/Failed to fetch|NetworkError|Load failed/i.test(String(err && err.message))) throw err;
+    return await fetchWait(API+'?'+q+'&_r=1', {method:'GET', redirect:'follow'}, GET_WAIT_MS);
+  }
 }
 async function apiPost(body){
-  // text/plain keeps it a "simple" request, so Apps Script needs no CORS preflight
-  const r = await fetch(API, {method:'POST', redirect:'follow',
-    headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
-  if(!r.ok) throw new Error('server '+r.status);
-  return r.json();
+  // text/plain keeps it a "simple" request, so Apps Script needs no CORS preflight.
+  // Not retried here: flush() keeps the entries queued and tries again itself
+  // (a save is an upsert, so a repeat after a lost reply writes the same row).
+  return fetchWait(API, {method:'POST', redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)}, POST_WAIT_MS);
 }
 
 /* Pull this supervisor's sites, operators and this month's entries. */
@@ -1501,6 +1526,7 @@ async function cloudBootstrap(silent){
       deriveCanteen(site, ym, key);
     }
     if(!keep.has(DB.ui.site)) DB.ui.site = DB.sites[0] ? DB.sites[0].id : null;
+    clearTimeout(bootRetryT);      // loaded: no pending automatic retry needed
     lastPull = Date.now();          // a manual reload resets the throttle too
     save(); renderWhenFree();
     if(pendingCount()) flush(); else setSync('ok','Saved');
@@ -1514,11 +1540,16 @@ async function cloudBootstrap(silent){
       render();
       toast(err.message, 6000);
     }else{
-      setSync('bad','Offline');
-      if(!silent) toast('Could not reach head office: '+err.message+'. You can still type — it will send later.', 5200);
+      setSync('bad', err.timeout ? 'No signal' : 'Offline');
+      if(!silent) toast(err.timeout
+        ? 'No connection — your entries are safe on this phone. Tap the chip at the top to try again.'
+        : 'Could not reach head office: '+err.message+'. You can still type — it will send later.', 6000);
+      // try once more by itself a little later, rather than sit on "No signal"
+      clearTimeout(bootRetryT); bootRetryT = setTimeout(()=>cloudBootstrap(true), 30000);
     }
   }
 }
+let bootRetryT = null;
 
 /* Queue one operator and push soon. */
 let flushT=null, retryMs=4000;
